@@ -1,0 +1,10 @@
+NOTE:
+jsni.h and jsni-convert.h are not in default header files that node-gyp will install and use.
+So you must manually copy them to your header file path or node-gyp default header file path.
+
+Like:
+Your header file path: MYAPP/include/jsni.h
+or:
+Node-gyp header file path: ~/.node-gyp/4.4.0/include/node/ 
+
+

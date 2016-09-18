@@ -1,3 +1,10 @@
+*.diff
+*.log
+*.o
+*.d
+*.node
+*.so
+build/
 core
 vgcore.*
 v8*.log
