@@ -184,6 +184,7 @@ void Isolate::IterateThread(ThreadVisitor* v, char* t) {
 
 void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
   // Visit the roots from the top for a given thread.
+  // v->VisitPointer(bit_cast<Object**>(&app_absolute_path_));
   v->VisitPointer(&thread->pending_exception_);
   v->VisitPointer(&(thread->pending_message_obj_));
   v->VisitPointer(bit_cast<Object**>(&(thread->context_)));
@@ -1802,7 +1803,8 @@ Isolate::Isolate(bool enable_serializer)
 #endif
       use_counter_callback_(NULL),
       basic_block_profiler_(NULL),
-      abort_on_uncaught_exception_callback_(NULL) {
+      abort_on_uncaught_exception_callback_(NULL),
+      app_absolute_path_(NULL) {
   {
     base::LockGuard<base::Mutex> lock_guard(thread_data_table_mutex_.Pointer());
     CHECK(thread_data_table_);
@@ -1874,6 +1876,18 @@ void Isolate::GlobalTearDown() {
 }
 
 
+// Set app path.
+void Isolate::SetAppAbsolutePath(char* path){
+  app_absolute_path_ = (char*)malloc(sizeof(char) * strlen(path));;
+  strcpy(app_absolute_path_, path);
+}
+
+
+char* Isolate::GetAppAbsolutePath() {
+  return app_absolute_path_;
+}
+
+
 void Isolate::ClearSerializerData() {
   delete external_reference_table_;
   external_reference_table_ = NULL;
@@ -1935,6 +1949,16 @@ void Isolate::Deinit() {
   heap_profiler_ = NULL;
   delete cpu_profiler_;
   cpu_profiler_ = NULL;
+
+  if (jsni_env_ != nullptr) {
+    delete jsni_env_;
+    jsni_env_ = nullptr;
+  }
+
+  if (app_absolute_path_ != nullptr) {
+    free(app_absolute_path_);
+    app_absolute_path_ = nullptr;
+  }
 
   ClearSerializerData();
 }
@@ -2118,6 +2142,8 @@ bool Isolate::Init(Deserializer* des) {
       reinterpret_cast<Address>(hacker_name##_address());
   FOR_EACH_ISOLATE_ADDRESS_NAME(ASSIGN_ELEMENT)
 #undef ASSIGN_ELEMENT
+
+  jsni_env_ = new jsniinternal::JSNIEnvExt(reinterpret_cast<void*>(this));
 
   string_tracker_ = new StringTracker();
   string_tracker_->isolate_ = this;

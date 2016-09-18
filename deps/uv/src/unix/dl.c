@@ -37,6 +37,13 @@ int uv_dlopen(const char* filename, uv_lib_t* lib) {
   return lib->handle ? 0 : uv__dlerror(lib);
 }
 
+int uv_dlopen_flags(const char* filename, int flags, uv_lib_t* lib) {
+  dlerror(); /* Reset error status. */
+  lib->errmsg = NULL;
+  lib->handle = dlopen(filename, flags);
+  return lib->handle ? 0 : uv__dlerror(lib);
+}
+
 
 void uv_dlclose(uv_lib_t* lib) {
   uv__free(lib->errmsg);

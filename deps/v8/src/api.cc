@@ -7095,6 +7095,21 @@ Isolate* Isolate::GetCurrent() {
   return reinterpret_cast<Isolate*>(isolate);
 }
 
+void* Isolate::GetEnv() {
+  i::Isolate* isolate = i::Isolate::Current();
+  return isolate->GetEnv();
+}
+
+// Set app path.
+void Isolate::SetAppAbsolutePath(char* path){
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->SetAppAbsolutePath(path);
+}
+
+char* Isolate::GetAppAbsolutePath() {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->GetAppAbsolutePath();
+}
 
 Isolate* Isolate::New() {
   Isolate::CreateParams create_params;

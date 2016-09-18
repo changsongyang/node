@@ -53,6 +53,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <vector>
+#include <dlfcn.h>
 
 #if defined(NODE_HAVE_I18N_SUPPORT)
 #include <unicode/uvernum.h>
@@ -2169,6 +2170,40 @@ struct node_module* get_linked_module(const char* name) {
   return mp;
 }
 
+void SetAppPath(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  if (args.Length() != 1) {
+    env->ThrowError("process.setAppPath takes exactly 1 arguments.");
+    return;
+  }
+  Isolate* isolate = env->isolate();
+  node::Utf8Value app_path(env->isolate(), args[0]);
+  isolate->SetAppAbsolutePath(*app_path);
+}
+
+void GetAppPath(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
+  args.GetReturnValue().Set(OneByteString(isolate, isolate->GetAppAbsolutePath()));
+}
+
+void TryDLOpen(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  if (args.Length() != 1) {
+    env->ThrowError("process.trydlopen takes exactly 1 arguments.");
+    return;
+  }
+  node::Utf8Value filename(env->isolate(), args[0]);  // Cast
+  uv_lib_t lib;
+  const bool is_dlopen_error = uv_dlopen_flags(*filename, RTLD_LAZY | RTLD_GLOBAL, &lib);
+  if (is_dlopen_error) {
+    // Surpress. We do not log error when we have checking dependence.
+    // fprintf(stderr, "TryDLOpen: Cannot open library: %s", uv_dlerror(&lib));
+    // fflush(stderr);
+  }
+  args.GetReturnValue().Set(v8::Boolean::New(env->isolate(), !is_dlopen_error));
+}
+
 typedef void (UV_DYNAMIC* extInit)(Local<Object> exports);
 
 // DLOpen is process.dlopen(module, filename).
@@ -2190,6 +2225,7 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
 
   Local<Object> module = args[0]->ToObject(env->isolate());  // Cast
   node::Utf8Value filename(env->isolate(), args[1]);  // Cast
+
   const bool is_dlopen_error = uv_dlopen(*filename, &lib);
 
   // Objects containing v14 or later modules will have registered themselves
@@ -2209,7 +2245,35 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
     return;
   }
 
+  Local<String> exports_string = env->exports_string();
+  Local<Object> exports = module->Get(exports_string)->ToObject(env->isolate());
+
   if (mp == nullptr) {
+    // Call JSNI_Init to Register native methods.
+    // TODO(jiny): Maybe we should use void*
+    // instead of JsValue or JsObject, for the JSNI_InitFn argument.
+    typedef int (*JSNI_InitFn) (void* env, Local<Object>);
+    bool success = false;
+    void* ptr = nullptr;
+    uv_dlsym(&lib, "JSNI_Init", &ptr);
+    if (ptr != nullptr) {
+      JSNI_InitFn jsni_init = reinterpret_cast<JSNI_InitFn>(ptr);
+      // Register functions.
+      // TODO. Consider to pass *exports.
+      struct JSNIEnvExt {
+        void* JSNIEnv;
+        void* isolate_;
+      };
+      void* jsni_env = reinterpret_cast<void*>(env->isolate()->GetEnv());
+      void* JSNIEnv = reinterpret_cast<JSNIEnvExt*>(jsni_env)->JSNIEnv;
+      int version = jsni_init(JSNIEnv, exports);
+      if (version > 0) {
+        return;
+      }
+    } else {
+      fprintf(stderr, "Cannot call JSNI_Init.");
+    }
+
     uv_dlclose(&lib);
     env->ThrowError("Module did not self-register.");
     return;
@@ -2237,9 +2301,6 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
   mp->nm_link = modlist_addon;
   modlist_addon = mp;
 
-  Local<String> exports_string = env->exports_string();
-  Local<Object> exports = module->Get(exports_string)->ToObject(env->isolate());
-
   if (mp->nm_context_register_func != nullptr) {
     mp->nm_context_register_func(exports, module, env->context(), mp->nm_priv);
   } else if (mp->nm_register_func != nullptr) {
@@ -2249,7 +2310,6 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
     env->ThrowError("Module has no declared entry point.");
     return;
   }
-
   // Tell coverity that 'handle' should not be freed when we return.
   // coverity[leaked_storage]
 }
@@ -3053,6 +3113,10 @@ void SetupProcessObject(Environment* env,
   env->SetMethod(process, "hrtime", Hrtime);
 
   env->SetMethod(process, "dlopen", DLOpen);
+  // For native load.
+  env->SetMethod(process, "trydlopen", TryDLOpen);
+  env->SetMethod(process, "setAppPath", SetAppPath);
+  env->SetMethod(process, "getAppPath", GetAppPath);
 
   env->SetMethod(process, "uptime", Uptime);
   env->SetMethod(process, "memoryUsage", MemoryUsage);

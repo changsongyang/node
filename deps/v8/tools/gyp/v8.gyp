@@ -885,6 +885,8 @@
         '../../src/runtime/runtime-utils.h',
         '../../src/runtime/runtime.cc',
         '../../src/runtime/runtime.h',
+        '../../src/runtime/jsni.cc',
+        '../../src/runtime/jsni-convert.cc',
         '../../src/safepoint-table.cc',
         '../../src/safepoint-table.h',
         '../../src/sampler.cc',

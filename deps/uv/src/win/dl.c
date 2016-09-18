@@ -43,6 +43,23 @@ int uv_dlopen(const char* filename, uv_lib_t* lib) {
   return 0;
 }
 
+int uv_dlopen_flags(const char* filename, int flags, uv_lib_t* lib) {
+  WCHAR filename_w[32768];
+
+  lib->handle = NULL;
+  lib->errmsg = NULL;
+
+  if (!uv_utf8_to_utf16(filename, filename_w, ARRAY_SIZE(filename_w))) {
+    return uv__dlerror(lib, GetLastError());
+  }
+
+  lib->handle = LoadLibraryExW(filename_w, NULL, flags);
+  if (lib->handle == NULL) {
+    return uv__dlerror(lib, GetLastError());
+  }
+
+  return 0;
+}
 
 void uv_dlclose(uv_lib_t* lib) {
   if (lib->errmsg) {

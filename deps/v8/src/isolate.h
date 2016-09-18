@@ -5,6 +5,8 @@
 #ifndef V8_ISOLATE_H_
 #define V8_ISOLATE_H_
 
+#include "src/runtime/jsni-internal.h"
+
 #include <queue>
 #include "include/v8-debug.h"
 #include "src/allocation.h"
@@ -396,6 +398,9 @@ class Isolate {
   class EntryStackItem;
  public:
   ~Isolate();
+  jsniinternal::JSNIEnvExt* GetEnv() {
+    return jsni_env_;
+  }
 
   // A thread has a PerIsolateThreadData instance for each isolate that it has
   // entered. That instance is allocated when the isolate is initially entered
@@ -506,6 +511,11 @@ class Isolate {
   static void GlobalTearDown();
 
   void ClearSerializerData();
+
+  // Set app path.
+  void SetAppAbsolutePath(char* path);
+
+  char* GetAppAbsolutePath();
 
   // Find the PerThread for this particular (isolate, thread) combination
   // If one does not yet exist, return null.
@@ -1368,6 +1378,12 @@ class Isolate {
 
   v8::Isolate::AbortOnUncaughtExceptionCallback
       abort_on_uncaught_exception_callback_;
+
+  // For JSNI
+  jsniinternal::JSNIEnvExt* jsni_env_;
+
+  // For NativeLoad
+  char* app_absolute_path_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;
