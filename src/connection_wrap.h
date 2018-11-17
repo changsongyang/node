@@ -10,25 +10,18 @@
 namespace node {
 
 template <typename WrapType, typename UVType>
-class ConnectionWrap : public StreamWrap {
+class ConnectionWrap : public LibuvStreamWrap {
  public:
-  UVType* UVHandle() {
-    return &handle_;
-  }
-
   static void OnConnection(uv_stream_t* handle, int status);
+  static void AfterConnect(uv_connect_t* req, int status);
 
  protected:
   ConnectionWrap(Environment* env,
                  v8::Local<v8::Object> object,
-                 ProviderType provider,
-                 AsyncWrap* parent);
-  ~ConnectionWrap() {
-  }
+                 ProviderType provider);
 
   UVType handle_;
 };
-
 
 }  // namespace node
 

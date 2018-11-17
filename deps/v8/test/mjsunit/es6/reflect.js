@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(neis): Test with proxies.
-
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -273,6 +271,14 @@ function prepare(target) {
 })();
 
 
+(function testReflectSetArrayLength() {
+  var y = [];
+  Object.defineProperty(y, 0, {value: 42, configurable: false});
+  assertFalse(Reflect.set(y, 'length', 0));
+  assertTrue(Reflect.set(y, 'length', 2));
+})();
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Reflect.has
@@ -349,6 +355,14 @@ function prepare(target) {
   assertTrue(Reflect.defineProperty(target, a, {value: 42}));
   assertEquals(target.bla, 42);
   assertThrowsEquals(function() { Reflect.defineProperty(target, b); }, "gaga");
+})();
+
+
+(function testReflectDefinePropertyArrayLength() {
+  var y = [];
+  Object.defineProperty(y, 0, {value: 42, configurable: false});
+  assertFalse(Reflect.defineProperty(y, 'length', {value: 0}));
+  assertTrue(Reflect.defineProperty(y, 'length', {value: 2}));
 })();
 
 
@@ -541,6 +555,13 @@ function prepare(target) {
       [s2]: 0, "-1": 0, "88": 0, "aaa": 0 };
   assertEquals(["0", "42", "88", "bla", "-1", "aaa", s1, s2],
       Reflect.ownKeys(obj));
+  // Force dict-mode elements.
+  delete obj[0];
+  assertEquals(["42", "88", "bla", "-1", "aaa", s1, s2],
+      Reflect.ownKeys(obj));
+  // Force dict-mode properties.
+  delete obj["bla"];
+  assertEquals(["42", "88", "-1", "aaa", s1, s2], Reflect.ownKeys(obj));
 })();
 
 

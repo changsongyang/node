@@ -1,5 +1,8 @@
 # io.js ChangeLog
 
+<!--lint disable prohibited-strings-->
+<!--lint disable maximum-line-length-->
+
 <table>
 <tr>
 <th>v3</th>
@@ -60,6 +63,11 @@
 </table>
 
 * Other Versions
+  * [11.x](CHANGELOG_V11.md)
+  * [10.x](CHANGELOG_V10.md)
+  * [9.x](CHANGELOG_V9.md)
+  * [8.x](CHANGELOG_V8.md)
+  * [7.x](CHANGELOG_V7.md)
   * [6.x](CHANGELOG_V6.md)
   * [5.x](CHANGELOG_V5.md)
   * [4.x](CHANGELOG_V4.md)
@@ -663,8 +671,8 @@ See https://github.com/nodejs/node/labels/confirmed-bug for complete and current
 
 ### Commits
 
-* [[`52b1230628`](https://github.com/nodejs/node/commit/52b1230628)] - **deps**: update deps/openssl/conf/arch/*/opensslconf.h (Shigeki Ohtsu) [#2141](https://github.com/nodejs/node/pull/2141)
-* [[`20ff1e2ecb`](https://github.com/nodejs/node/commit/20ff1e2ecb)] - **deps**: upgrade openssl sources to 1.0.2d (Shigeki Ohtsu) [#2141](https://github.com/nodejs/node/pull/2141)
+* [[`c70e68fa32`](https://github.com/nodejs/node/commit/c70e68fa32)] - **deps**: update deps/openssl/conf/arch/*/opensslconf.h (Shigeki Ohtsu) [#2141](https://github.com/nodejs/node/pull/2141)
+* [[`ca93f7f2e6`](https://github.com/nodejs/node/commit/ca93f7f2e6)] - **deps**: upgrade openssl sources to 1.0.2d (Shigeki Ohtsu) [#2141](https://github.com/nodejs/node/pull/2141)
 
 
 <a id="2.3.3"></a>
@@ -1359,7 +1367,7 @@ See https://github.com/nodejs/node/labels/confirmed-bug for complete and current
 * [[`2e2fce0502`](https://github.com/nodejs/node/commit/2e2fce0502)] - **repl**: fix persistent history and env variable name (Roman Reiss) [#1593](https://github.com/nodejs/node/pull/1593)
 * [[`ea5195ccaf`](https://github.com/nodejs/node/commit/ea5195ccaf)] - **repl**: do not save history for non-terminal repl (Fedor Indutny) [#1575](https://github.com/nodejs/node/pull/1575)
 * [[`0450ce7db2`](https://github.com/nodejs/node/commit/0450ce7db2)] - **repl**: add mode detection, cli persistent history (Chris Dickinson) [#1513](https://github.com/nodejs/node/pull/1513)
-* [[`af9fe3bbc7`](https://github.com/nodejs/node/commit/af9fe3bbc7)] - **(SEMVER-MAJOR)** **src**: bump NODE_MODULE_VERSION due to V8 API (Rod Vagg) [#1532](https://github.com/nodejs/node/pull/1532)
+* [[`c1b9913e1f`](https://github.com/nodejs/node/commit/c1b9913e1f)] - **(SEMVER-MAJOR)** **src**: bump NODE_MODULE_VERSION due to V8 API (Rod Vagg) [#1532](https://github.com/nodejs/node/pull/1532)
 * [[`279f6116aa`](https://github.com/nodejs/node/commit/279f6116aa)] - **src**: fix -Wmissing-field-initializers warning (Ben Noordhuis) [#1606](https://github.com/nodejs/node/pull/1606)
 * [[`73062521a4`](https://github.com/nodejs/node/commit/73062521a4)] - **src**: deprecate smalloc public functions (Ben Noordhuis) [#1565](https://github.com/nodejs/node/pull/1565)
 * [[`ccb199af17`](https://github.com/nodejs/node/commit/ccb199af17)] - **src**: fix deprecation warnings (Ben Noordhuis) [#1565](https://github.com/nodejs/node/pull/1565)
@@ -1443,7 +1451,7 @@ will be removed at a later point. (Roman Reiss) [#1363](https://github.com/nodej
 ### Commits
 
 * [[`53ed89d927`](https://github.com/nodejs/node/commit/53ed89d927)] - ***Revert*** "**build**: use %PYTHON% instead of python" (Rod Vagg) [#1475](https://github.com/nodejs/node/pull/1475)
-* [[`2b744b0ab7`](https://github.com/nodejs/node/commit/2b744b0ab7)] - **src**: revert NODE_MODULE_VERSION to 43 (Chris Dickinson) [#1460](https://github.com/nodejs/node/pull/1460)
+* [[`f23b96352b`](https://github.com/nodejs/node/commit/f23b96352b)] - **src**: revert NODE_MODULE_VERSION to 43 (Chris Dickinson) [#1460](https://github.com/nodejs/node/pull/1460)
 * [[`431673ebd1`](https://github.com/nodejs/node/commit/431673ebd1)] - **buffer**: fast-case for empty string in byteLength (Jackson Tian) [#1441](https://github.com/nodejs/node/pull/1441)
 * [[`1b22bad35f`](https://github.com/nodejs/node/commit/1b22bad35f)] - **build**: fix logic for shared library flags (Jeremiah Senkpiel) [#1454](https://github.com/nodejs/node/pull/1454)
 * [[`91943a99d5`](https://github.com/nodejs/node/commit/91943a99d5)] - **build**: use %PYTHON% instead of python (Rod Vagg) [#1444](https://github.com/nodejs/node/pull/1444)
@@ -2027,7 +2035,7 @@ will be removed at a later point. (Roman Reiss) [#1363](https://github.com/nodej
 
 ### Notable changes
 
-* **tls**: A typo introduced in the TLSWrap changes in [#840](https://github.com/nodejs/node/pull/840) only encountered as a bug on Windows was not caught by the io.js CI system due to problems with the Windows build script and the Windows CI slave configuration, see Known Issues below. Fixed in [#994](https://github.com/nodejs/node/pull/994) & [#1004](https://github.com/nodejs/node/pull/1004). (Fedor Indutny)
+* **tls**: A typo introduced in the TLSWrap changes in [#840](https://github.com/nodejs/node/pull/840) only encountered as a bug on Windows was not caught by the io.js CI system due to problems with the Windows build script and the Windows CI configuration, see Known Issues below. Fixed in [#994](https://github.com/nodejs/node/pull/994) & [#1004](https://github.com/nodejs/node/pull/1004). (Fedor Indutny)
 * **npm**: Upgrade npm to 2.6.1. See [npm CHANGELOG.md](https://github.com/npm/npm/blob/master/CHANGELOG.md#v260-2015-02-12) for details. Summary:
   * [`8b98f0e`](https://github.com/npm/npm/commit/8b98f0e709d77a8616c944aebd48ab726f726f76)
     [#4471](https://github.com/npm/npm/issues/4471) `npm outdated` (and only `npm
@@ -2549,7 +2557,7 @@ _Note: version **1.4.0** was tagged and built but not released. A libuv bug was 
 <a id="1.0.1"></a>
 ## 2015-01-14, Version 1.0.1, @rvagg
 
-Rebuild due to stale build slave git reflogs for 1.0.0 release
+Rebuild due to stale build worker git reflogs for 1.0.0 release
 
 * doc: improve write style consistency (Rui Marinho)
 * win,msi: correct doc website link (Bert Belder)

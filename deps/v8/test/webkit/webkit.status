@@ -33,11 +33,16 @@
   'dfg-inline-arguments-become-int32': [PASS, FAIL],
   'dfg-inline-arguments-reset': [PASS, FAIL],
   'dfg-inline-arguments-reset-changetype': [PASS, FAIL],
-  # TODO(turbofan): We run out of stack earlier on 64-bit for now.
-  'fast/js/deep-recursion-test': [PASS, NO_VARIANTS],
   # Irregexp interpreter overflows stack. We should just not crash.
   'fast/js/regexp-stack-overflow': [PASS, FAIL],
+
+  # Slow tests.
+  'dfg-double-vote-fuzz': [PASS, SLOW],
 }],  # ALWAYS
+['system == windows', {
+  # Exceeds call stack on windows after MSVS2017 switch.
+  'fast/js/excessive-comma-usage': [SKIP],
+}],  # system == windows
 ['mode == debug', {
   # Too slow in debug mode.
   'dfg-int-overflow-in-loop': [SKIP],
@@ -55,9 +60,9 @@
   # Skip tests that are too slow for simulators.
   'dfg-int-overflow-in-loop': [SKIP],
 }],  # 'simulator'
-['arch == arm64 and simulator_run == True', {
+['arch == arm64 and simulator_run', {
   'dfg-int-overflow-in-loop': [SKIP],
-}],  # 'arch == arm64 and simulator_run == True'
+}],  # 'arch == arm64 and simulator_run'
 ['dcheck_always_on == True and (arch == arm or arch == arm64)', {
   # Doesn't work with gcc 4.6 on arm or arm64 for some reason.
   'reentrant-caching': [SKIP],
@@ -66,10 +71,18 @@
   # Too slow for mips big-endian boards on bots (no FPU).
   'dfg-int-overflow-in-loop': [SKIP],
 }], # 'arch == mips'
-['(arch == ppc or arch == ppc64) and simulator_run == True', {
+['(arch == mips64 or arch == mips64el) and simulator_run', {
+  # Too slow.
+  'dfg-int-overflow-in-loop': [SKIP],
+}], # '(arch == mips64 or arch == mips64el) and simulator_run'
+['(arch == ppc or arch == ppc64) and simulator_run', {
   # Too slow.
   'dfg-int-overflow-in-loop': [SKIP],
 }], # 'arch == ppc or arch == ppc64'
+['arch == s390 or arch == s390x', {
+  # Too slow.
+  'dfg-int-overflow-in-loop': [SKIP],
+}],  # 'arch == s390 or arch == s390x'
 
 ##############################################################################
 ['asan == True', {
@@ -97,17 +110,16 @@
 }],  # 'gc_stress == True and mode == debug'
 
 ##############################################################################
-['ignition == True', {
-  # TODO(4680): Throws a RangeError due to stack overflow. Need investigation.
-  'fast/js/excessive-comma-usage': [SKIP],  # Stack is brittle, SKIP not FAIL.
-}],  # ignition == True
+['arch == arm64 and msan', {
+  # Stack size too large with masm on Arm64.
+  'fast/js/excessive-comma-usage': [SKIP],
+}],  # arch == arm64 and msan
 
 ##############################################################################
-['ignition == True and msan', {
-  # TODO(mythria,4680): Too slow and timeout on ignition.
+['(variant == nooptimization or variant == stress or variant == no_liftoff) and (arch == arm or arch == arm64) and simulator_run', {
+  # Slow tests: https://crbug.com/v8/7783
   'dfg-double-vote-fuzz': [SKIP],
-  'dfg-int-overflow-in-loop': [SKIP],
-}],  # ignition == True and msan
+}],  # (variant == nooptimization or variant == stress or variant == no_liftoff) and (arch == arm or arch == arm64) and simulator_run
 
 ##############################################################################
 ['gcov_coverage', {
@@ -115,6 +127,16 @@
   'fast/js/excessive-comma-usage': [SKIP],
   'run-json-stringify': [SKIP],
 }],  # 'gcov_coverage'
+
+##############################################################################
+['variant == no_wasm_traps', {
+  '*': [SKIP],
+}],  # variant == no_wasm_traps
+
+##############################################################################
+['no_i18n == True', {
+  'fast/js/string-capitalization': [FAIL],
+}],  # variant == no_wasm_traps
 
 ##############################################################################
 ]

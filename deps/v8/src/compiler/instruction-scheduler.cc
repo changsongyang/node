@@ -6,16 +6,22 @@
 
 #include "src/base/adapters.h"
 #include "src/base/utils/random-number-generator.h"
+#include "src/isolate.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
 
-// Compare the two nodes and return true if node1 is a better candidate than
-// node2 (i.e. node1 should be scheduled before node2).
-bool InstructionScheduler::CriticalPathFirstQueue::CompareNodes(
-    ScheduleGraphNode *node1, ScheduleGraphNode *node2) const {
-  return node1->total_latency() > node2->total_latency();
+void InstructionScheduler::SchedulingQueueBase::AddNode(
+    ScheduleGraphNode* node) {
+  // We keep the ready list sorted by total latency so that we can quickly find
+  // the next best candidate to schedule.
+  auto it = nodes_.begin();
+  while ((it != nodes_.end()) &&
+         ((*it)->total_latency() >= node->total_latency())) {
+    ++it;
+  }
+  nodes_.insert(it, node);
 }
 
 
@@ -24,12 +30,10 @@ InstructionScheduler::CriticalPathFirstQueue::PopBestCandidate(int cycle) {
   DCHECK(!IsEmpty());
   auto candidate = nodes_.end();
   for (auto iterator = nodes_.begin(); iterator != nodes_.end(); ++iterator) {
-    // We only consider instructions that have all their operands ready and
-    // we try to schedule the critical path first.
+    // We only consider instructions that have all their operands ready.
     if (cycle >= (*iterator)->start_cycle()) {
-      if ((candidate == nodes_.end()) || CompareNodes(*iterator, *candidate)) {
-        candidate = iterator;
-      }
+      candidate = iterator;
+      break;
     }
   }
 
@@ -74,7 +78,6 @@ void InstructionScheduler::ScheduleGraphNode::AddSuccessor(
   node->unscheduled_predecessors_count_++;
 }
 
-
 InstructionScheduler::InstructionScheduler(Zone* zone,
                                            InstructionSequence* sequence)
     : zone_(zone),
@@ -82,15 +85,17 @@ InstructionScheduler::InstructionScheduler(Zone* zone,
       graph_(zone),
       last_side_effect_instr_(nullptr),
       pending_loads_(zone),
-      last_live_in_reg_marker_(nullptr) {
-}
-
+      last_live_in_reg_marker_(nullptr),
+      last_deopt_or_trap_(nullptr),
+      operands_map_(zone) {}
 
 void InstructionScheduler::StartBlock(RpoNumber rpo) {
   DCHECK(graph_.empty());
-  DCHECK(last_side_effect_instr_ == nullptr);
+  DCHECK_NULL(last_side_effect_instr_);
   DCHECK(pending_loads_.empty());
-  DCHECK(last_live_in_reg_marker_ == nullptr);
+  DCHECK_NULL(last_live_in_reg_marker_);
+  DCHECK_NULL(last_deopt_or_trap_);
+  DCHECK(operands_map_.empty());
   sequence()->StartBlock(rpo);
 }
 
@@ -106,19 +111,28 @@ void InstructionScheduler::EndBlock(RpoNumber rpo) {
   last_side_effect_instr_ = nullptr;
   pending_loads_.clear();
   last_live_in_reg_marker_ = nullptr;
+  last_deopt_or_trap_ = nullptr;
+  operands_map_.clear();
 }
 
+void InstructionScheduler::AddTerminator(Instruction* instr) {
+  ScheduleGraphNode* new_node = new (zone()) ScheduleGraphNode(zone(), instr);
+  // Make sure that basic block terminators are not moved by adding them
+  // as successor of every instruction.
+  for (ScheduleGraphNode* node : graph_) {
+    node->AddSuccessor(new_node);
+  }
+  graph_.push_back(new_node);
+}
 
 void InstructionScheduler::AddInstruction(Instruction* instr) {
   ScheduleGraphNode* new_node = new (zone()) ScheduleGraphNode(zone(), instr);
 
-  if (IsBlockTerminator(instr)) {
-    // Make sure that basic block terminators are not moved by adding them
-    // as successor of every instruction.
-    for (ScheduleGraphNode* node : graph_) {
-      node->AddSuccessor(new_node);
-    }
-  } else if (IsFixedRegisterParameter(instr)) {
+  // We should not have branches in the middle of a block.
+  DCHECK_NE(instr->flags_mode(), kFlags_branch);
+  DCHECK_NE(instr->flags_mode(), kFlags_branch_and_poison);
+
+  if (IsFixedRegisterParameter(instr)) {
     if (last_live_in_reg_marker_ != nullptr) {
       last_live_in_reg_marker_->AddSuccessor(new_node);
     }
@@ -126,6 +140,12 @@ void InstructionScheduler::AddInstruction(Instruction* instr) {
   } else {
     if (last_live_in_reg_marker_ != nullptr) {
       last_live_in_reg_marker_->AddSuccessor(new_node);
+    }
+
+    // Make sure that instructions are not scheduled before the last
+    // deoptimization or trap point when they depend on it.
+    if ((last_deopt_or_trap_ != nullptr) && DependsOnDeoptOrTrap(instr)) {
+      last_deopt_or_trap_->AddSuccessor(new_node);
     }
 
     // Instructions with side effects and memory operations can't be
@@ -146,12 +166,36 @@ void InstructionScheduler::AddInstruction(Instruction* instr) {
         last_side_effect_instr_->AddSuccessor(new_node);
       }
       pending_loads_.push_back(new_node);
+    } else if (instr->IsDeoptimizeCall() || instr->IsTrap()) {
+      // Ensure that deopts or traps are not reordered with respect to
+      // side-effect instructions.
+      if (last_side_effect_instr_ != nullptr) {
+        last_side_effect_instr_->AddSuccessor(new_node);
+      }
+      last_deopt_or_trap_ = new_node;
     }
 
     // Look for operand dependencies.
-    for (ScheduleGraphNode* node : graph_) {
-      if (HasOperandDependency(node->instruction(), instr)) {
-        node->AddSuccessor(new_node);
+    for (size_t i = 0; i < instr->InputCount(); ++i) {
+      const InstructionOperand* input = instr->InputAt(i);
+      if (input->IsUnallocated()) {
+        int32_t vreg = UnallocatedOperand::cast(input)->virtual_register();
+        auto it = operands_map_.find(vreg);
+        if (it != operands_map_.end()) {
+          it->second->AddSuccessor(new_node);
+        }
+      }
+    }
+
+    // Record the virtual registers defined by this instruction.
+    for (size_t i = 0; i < instr->OutputCount(); ++i) {
+      const InstructionOperand* output = instr->OutputAt(i);
+      if (output->IsUnallocated()) {
+        operands_map_[UnallocatedOperand::cast(output)->virtual_register()] =
+            new_node;
+      } else if (output->IsConstant()) {
+        operands_map_[ConstantOperand::cast(output)->virtual_register()] =
+            new_node;
       }
     }
   }
@@ -204,8 +248,41 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
     case kArchNop:
     case kArchFramePointer:
     case kArchParentFramePointer:
+    case kArchStackSlot:  // Despite its name this opcode will produce a
+                          // reference to a frame slot, so it is not affected
+                          // by the arm64 dual stack issues mentioned below.
+    case kArchComment:
+    case kArchDeoptimize:
+    case kArchJmp:
+    case kArchBinarySearchSwitch:
+    case kArchLookupSwitch:
+    case kArchRet:
+    case kArchTableSwitch:
+    case kArchThrowTerminator:
+      return kNoOpcodeFlags;
+
     case kArchTruncateDoubleToI:
-    case kArchStackSlot:
+    case kIeee754Float64Acos:
+    case kIeee754Float64Acosh:
+    case kIeee754Float64Asin:
+    case kIeee754Float64Asinh:
+    case kIeee754Float64Atan:
+    case kIeee754Float64Atanh:
+    case kIeee754Float64Atan2:
+    case kIeee754Float64Cbrt:
+    case kIeee754Float64Cos:
+    case kIeee754Float64Cosh:
+    case kIeee754Float64Exp:
+    case kIeee754Float64Expm1:
+    case kIeee754Float64Log:
+    case kIeee754Float64Log1p:
+    case kIeee754Float64Log10:
+    case kIeee754Float64Log2:
+    case kIeee754Float64Pow:
+    case kIeee754Float64Sin:
+    case kIeee754Float64Sinh:
+    case kIeee754Float64Tan:
+    case kIeee754Float64Tanh:
       return kNoOpcodeFlags;
 
     case kArchStackPointer:
@@ -213,44 +290,77 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
       // must not be reordered with instruction with side effects.
       return kIsLoadOperation;
 
+    case kArchWordPoisonOnSpeculation:
+      // While poisoning operations have no side effect, they must not be
+      // reordered relative to branches.
+      return kHasSideEffect;
+
     case kArchPrepareCallCFunction:
+    case kArchSaveCallerRegisters:
+    case kArchRestoreCallerRegisters:
     case kArchPrepareTailCall:
     case kArchCallCFunction:
     case kArchCallCodeObject:
     case kArchCallJSFunction:
-      return kHasSideEffect;
-
+    case kArchCallWasmFunction:
     case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject:
-    case kArchTailCallJSFunctionFromJSFunction:
-    case kArchTailCallJSFunction:
-      return kHasSideEffect | kIsBlockTerminator;
+    case kArchTailCallAddress:
+    case kArchTailCallWasm:
+    case kArchDebugAbort:
+    case kArchDebugBreak:
+      return kHasSideEffect;
 
-    case kArchDeoptimize:
-    case kArchJmp:
-    case kArchLookupSwitch:
-    case kArchTableSwitch:
-    case kArchRet:
-    case kArchThrowTerminator:
-      return kIsBlockTerminator;
+    case kArchStoreWithWriteBarrier:
+      return kHasSideEffect;
 
-    case kCheckedLoadInt8:
-    case kCheckedLoadUint8:
-    case kCheckedLoadInt16:
-    case kCheckedLoadUint16:
-    case kCheckedLoadWord32:
-    case kCheckedLoadWord64:
-    case kCheckedLoadFloat32:
-    case kCheckedLoadFloat64:
+    case kWord32AtomicLoadInt8:
+    case kWord32AtomicLoadUint8:
+    case kWord32AtomicLoadInt16:
+    case kWord32AtomicLoadUint16:
+    case kWord32AtomicLoadWord32:
       return kIsLoadOperation;
 
-    case kCheckedStoreWord8:
-    case kCheckedStoreWord16:
-    case kCheckedStoreWord32:
-    case kCheckedStoreWord64:
-    case kCheckedStoreFloat32:
-    case kCheckedStoreFloat64:
-    case kArchStoreWithWriteBarrier:
+    case kWord32AtomicStoreWord8:
+    case kWord32AtomicStoreWord16:
+    case kWord32AtomicStoreWord32:
+      return kHasSideEffect;
+
+    case kWord32AtomicExchangeInt8:
+    case kWord32AtomicExchangeUint8:
+    case kWord32AtomicExchangeInt16:
+    case kWord32AtomicExchangeUint16:
+    case kWord32AtomicExchangeWord32:
+    case kWord32AtomicCompareExchangeInt8:
+    case kWord32AtomicCompareExchangeUint8:
+    case kWord32AtomicCompareExchangeInt16:
+    case kWord32AtomicCompareExchangeUint16:
+    case kWord32AtomicCompareExchangeWord32:
+    case kWord32AtomicAddInt8:
+    case kWord32AtomicAddUint8:
+    case kWord32AtomicAddInt16:
+    case kWord32AtomicAddUint16:
+    case kWord32AtomicAddWord32:
+    case kWord32AtomicSubInt8:
+    case kWord32AtomicSubUint8:
+    case kWord32AtomicSubInt16:
+    case kWord32AtomicSubUint16:
+    case kWord32AtomicSubWord32:
+    case kWord32AtomicAndInt8:
+    case kWord32AtomicAndUint8:
+    case kWord32AtomicAndInt16:
+    case kWord32AtomicAndUint16:
+    case kWord32AtomicAndWord32:
+    case kWord32AtomicOrInt8:
+    case kWord32AtomicOrUint8:
+    case kWord32AtomicOrInt16:
+    case kWord32AtomicOrUint16:
+    case kWord32AtomicOrWord32:
+    case kWord32AtomicXorInt8:
+    case kWord32AtomicXorUint8:
+    case kWord32AtomicXorInt16:
+    case kWord32AtomicXorUint16:
+    case kWord32AtomicXorWord32:
       return kHasSideEffect;
 
 #define CASE(Name) case k##Name:
@@ -260,49 +370,14 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
   }
 
   UNREACHABLE();
-  return kNoOpcodeFlags;
 }
-
-
-bool InstructionScheduler::HasOperandDependency(
-    const Instruction* instr1, const Instruction* instr2) const {
-  for (size_t i = 0; i < instr1->OutputCount(); ++i) {
-    for (size_t j = 0; j < instr2->InputCount(); ++j) {
-      const InstructionOperand* output = instr1->OutputAt(i);
-      const InstructionOperand* input = instr2->InputAt(j);
-
-      if (output->IsUnallocated() && input->IsUnallocated() &&
-          (UnallocatedOperand::cast(output)->virtual_register() ==
-           UnallocatedOperand::cast(input)->virtual_register())) {
-        return true;
-      }
-
-      if (output->IsConstant() && input->IsUnallocated() &&
-          (ConstantOperand::cast(output)->virtual_register() ==
-           UnallocatedOperand::cast(input)->virtual_register())) {
-        return true;
-      }
-    }
-  }
-
-  // TODO(bafsa): Do we need to look for anti-dependencies/output-dependencies?
-
-  return false;
-}
-
-
-bool InstructionScheduler::IsBlockTerminator(const Instruction* instr) const {
-  return ((GetInstructionFlags(instr) & kIsBlockTerminator) ||
-          (instr->flags_mode() == kFlags_branch));
-}
-
 
 void InstructionScheduler::ComputeTotalLatencies() {
   for (ScheduleGraphNode* node : base::Reversed(graph_)) {
     int max_latency = 0;
 
     for (ScheduleGraphNode* successor : node->successors()) {
-      DCHECK(successor->total_latency() != -1);
+      DCHECK_NE(-1, successor->total_latency());
       if (successor->total_latency() > max_latency) {
         max_latency = successor->total_latency();
       }

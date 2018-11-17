@@ -17,6 +17,7 @@ print_usage_and_die() {
   echo  "  -c|--csv                               provide csv output"
   echo  "  -f|--file FILE                         profile input in a file"
   echo  "                                         (default: stdin)"
+  echo  "  -p|--percentiles                       comma separated percentiles"
   exit 1
 }
 
@@ -25,6 +26,7 @@ RANK_MODE=max
 TOP_LEVEL=no
 CSV=""
 LOGFILE=/dev/stdin
+PERCENTILES=""
 
 while [[ $# -ge 1 ]]
 do
@@ -60,6 +62,10 @@ do
       LOGFILE=$2
       shift
       ;;
+    -p|--percentiles)
+      PERCENTILES="--percentiles=$2"
+      shift
+      ;;
     *)
       break
       ;;
@@ -78,27 +84,22 @@ INTERESTING_NEW_GEN_KEYS="\
   weak \
   roots \
   old_new \
-  code \
   semispace \
-  object_groups \
 "
 
 INTERESTING_OLD_GEN_KEYS="\
-  clear.code_flush \
   clear.dependent_code \
   clear.global_handles \
   clear.maps \
   clear.slots_buffer \
   clear.store_buffer \
   clear.string_table \
-  clear.weak_cells \
   clear.weak_collections \
   clear.weak_lists \
   evacuate.candidates \
   evacuate.clean_up \
   evacuate.copy \
   evacuate.update_pointers \
-  evacuate.update_pointers.between_evacuated \
   evacuate.update_pointers.to_evacuated \
   evacuate.update_pointers.to_new \
   evacuate.update_pointers.weak \
@@ -108,7 +109,6 @@ INTERESTING_OLD_GEN_KEYS="\
   external.mc_incremental_epilogue \
   external.weak_global_handles \
   mark.finish_incremental \
-  mark.prepare_code_flush \
   mark.roots \
   mark.weak_closure \
   mark.weak_closure.ephemeral \
@@ -145,6 +145,7 @@ case $OP in
       --no-histogram \
       --rank $RANK_MODE \
       $CSV \
+      $PERCENTILES \
       ${INTERESTING_NEW_GEN_KEYS}
     ;;
   old-gen-rank)
@@ -153,6 +154,7 @@ case $OP in
       --no-histogram \
       --rank $RANK_MODE \
       $CSV \
+      $PERCENTILES \
       ${INTERESTING_OLD_GEN_KEYS}
     ;;
   *)

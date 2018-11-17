@@ -108,27 +108,22 @@ class MessageTestCase(test.TestCase):
 
 
 class MessageTestConfiguration(test.TestConfiguration):
-
-  def __init__(self, context, root):
-    super(MessageTestConfiguration, self).__init__(context, root)
-
   def Ls(self, path):
     if isdir(path):
-        return [f[:-3] for f in os.listdir(path) if f.endswith('.js')]
+      return [f for f in os.listdir(path)
+              if f.endswith('.js') or f.endswith('.mjs')]
     else:
-        return []
+      return []
 
   def ListTests(self, current_path, path, arch, mode):
     all_tests = [current_path + [t] for t in self.Ls(self.root)]
     result = []
     for test in all_tests:
       if self.Contains(path, test):
-        file_prefix = join(self.root, reduce(join, test[1:], ""))
-        file_path = file_prefix + ".js"
-        output_path = file_prefix + ".out"
+        file_path = join(self.root, reduce(join, test[1:], ''))
+        output_path = file_path[:file_path.rfind('.')] + '.out'
         if not exists(output_path):
-          print "Could not find %s" % output_path
-          continue
+          raise Exception("Could not find %s" % output_path)
         result.append(MessageTestCase(test, file_path, output_path,
                                       arch, mode, self.context, self))
     return result
@@ -136,11 +131,6 @@ class MessageTestConfiguration(test.TestConfiguration):
   def GetBuildRequirements(self):
     return ['sample', 'sample=shell']
 
-  def GetTestStatus(self, sections, defs):
-    status_file = join(self.root, 'message.status')
-    if exists(status_file):
-      test.ReadConfigurationInto(status_file, sections, defs)
-
 
 def GetConfiguration(context, root):
-  return MessageTestConfiguration(context, root)
+  return MessageTestConfiguration(context, root, 'message')

@@ -3,14 +3,16 @@
 # found in the LICENSE file.
 
 [
-['byteorder == big', {
-  # TODO(mips-team): Fix Wasm for big-endian.
-  'WasmModuleVerifyTest*': [SKIP],
-  'WasmFunctionVerifyTest*': [SKIP],
-  'WasmDecoderTest.TableSwitch*': [SKIP],
-  'WasmDecoderTest.AllLoadMemCombinations': [SKIP],
-  'AstDecoderTest.AllLoadMemCombinations': [SKIP],
-  'AstDecoderTest.AllStoreMemCombinations': [SKIP],
-  'Bytecodes.DecodeBytecodeAndOperands': [SKIP],
-}],  # 'byteorder == big'
+['system == macos and asan', {
+  # BUG(820416).
+  'BitsDeathTest*': [SKIP],
+  'LiveRangeUnitTest*': [SKIP],
+  'LoggingDeathTest*': [SKIP],
+  'LoggingTest.CompareClassTypes': [SKIP],
+  'LoggingTest.CompareWithDifferentSignedness': [SKIP],
+  'LoggingTest.CompareWithReferenceType': [SKIP],
+  'RandomNumberGenerator.NextSampleInvalidParam': [SKIP],
+  'RandomNumberGenerator.NextSampleSlowInvalidParam1': [SKIP],
+  'RandomNumberGenerator.NextSampleSlowInvalidParam2': [SKIP],
+}],  # 'system == macos and asan'
 ]

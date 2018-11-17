@@ -1,9 +1,12 @@
 'use strict';
-const common = require('../common');
+require('../common');
+
+// Test fs.readFile using a file descriptor.
+
+const fixtures = require('../common/fixtures');
 const assert = require('assert');
-const path = require('path');
 const fs = require('fs');
-const fn = path.join(common.fixturesDir, 'empty.txt');
+const fn = fixtures.path('empty.txt');
 
 tempFd(function(fd, close) {
   fs.readFile(fd, function(err, data) {
@@ -14,7 +17,7 @@ tempFd(function(fd, close) {
 
 tempFd(function(fd, close) {
   fs.readFile(fd, 'utf8', function(err, data) {
-    assert.strictEqual('', data);
+    assert.strictEqual(data, '');
     close();
   });
 });
@@ -24,23 +27,22 @@ tempFdSync(function(fd) {
 });
 
 tempFdSync(function(fd) {
-  assert.strictEqual('', fs.readFileSync(fd, 'utf8'));
+  assert.strictEqual(fs.readFileSync(fd, 'utf8'), '');
 });
 
 function tempFd(callback) {
   fs.open(fn, 'r', function(err, fd) {
-    if (err) throw err;
-
+    assert.ifError(err);
     callback(fd, function() {
       fs.close(fd, function(err) {
-        if (err) throw err;
+        assert.ifError(err);
       });
     });
   });
 }
 
 function tempFdSync(callback) {
-  var fd = fs.openSync(fn, 'r');
+  const fd = fs.openSync(fn, 'r');
   callback(fd);
   fs.closeSync(fd);
 }

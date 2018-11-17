@@ -11,6 +11,7 @@
 namespace v8 {
 namespace internal {
 namespace compiler {
+namespace machine_operator_unittest {
 
 #if GTEST_HAS_COMBINE
 
@@ -31,8 +32,6 @@ class MachineOperatorTestWithParam
 };
 
 
-namespace {
-
 const MachineRepresentation kMachineReps[] = {MachineRepresentation::kWord32,
                                               MachineRepresentation::kWord64};
 
@@ -49,8 +48,6 @@ const MachineRepresentation kRepresentationsForStore[] = {
     MachineRepresentation::kWord8,   MachineRepresentation::kWord16,
     MachineRepresentation::kWord32,  MachineRepresentation::kWord64,
     MachineRepresentation::kTagged};
-
-}  // namespace
 
 
 // -----------------------------------------------------------------------------
@@ -91,8 +88,7 @@ TEST_P(MachineLoadOperatorTest, OpcodeIsCorrect) {
 
 TEST_P(MachineLoadOperatorTest, ParameterIsCorrect) {
   MachineOperatorBuilder machine(zone(), representation());
-  EXPECT_EQ(GetParam(),
-            OpParameter<LoadRepresentation>(machine.Load(GetParam())));
+  EXPECT_EQ(GetParam(), LoadRepresentationOf(machine.Load(GetParam())));
 }
 
 
@@ -152,8 +148,7 @@ TEST_P(MachineStoreOperatorTest, OpcodeIsCorrect) {
 
 TEST_P(MachineStoreOperatorTest, ParameterIsCorrect) {
   MachineOperatorBuilder machine(zone(), representation());
-  EXPECT_EQ(GetParam(),
-            OpParameter<StoreRepresentation>(machine.Store(GetParam())));
+  EXPECT_EQ(GetParam(), StoreRepresentationOf(machine.Store(GetParam())));
 }
 
 
@@ -168,8 +163,6 @@ INSTANTIATE_TEST_CASE_P(
 
 // -----------------------------------------------------------------------------
 // Pure operators.
-
-namespace {
 
 struct PureOperator {
   const Operator* (MachineOperatorBuilder::*constructor)();
@@ -208,9 +201,7 @@ const PureOperator kPureOperators[] = {
     PURE(Word64Ror, 2, 0, 1),                 // --
     PURE(Word64Equal, 2, 0, 1),               // --
     PURE(Int32Add, 2, 0, 1),                  // --
-    PURE(Int32AddWithOverflow, 2, 0, 2),      // --
     PURE(Int32Sub, 2, 0, 1),                  // --
-    PURE(Int32SubWithOverflow, 2, 0, 2),      // --
     PURE(Int32Mul, 2, 0, 1),                  // --
     PURE(Int32MulHigh, 2, 0, 1),              // --
     PURE(Int32Div, 2, 1, 1),                  // --
@@ -249,6 +240,7 @@ const PureOperator kPureOperators[] = {
     PURE(Float32Equal, 2, 0, 1),              // --
     PURE(Float32LessThan, 2, 0, 1),           // --
     PURE(Float32LessThanOrEqual, 2, 0, 1),    // --
+    PURE(Float32Neg, 1, 0, 1),                // --
     PURE(Float64Abs, 1, 0, 1),                // --
     PURE(Float64Add, 2, 0, 1),                // --
     PURE(Float64Sub, 2, 0, 1),                // --
@@ -256,6 +248,8 @@ const PureOperator kPureOperators[] = {
     PURE(Float64Div, 2, 0, 1),                // --
     PURE(Float64Mod, 2, 0, 1),                // --
     PURE(Float64Sqrt, 1, 0, 1),               // --
+    PURE(Float64Max, 2, 0, 1),                // --
+    PURE(Float64Min, 2, 0, 1),                // --
     PURE(Float64Equal, 2, 0, 1),              // --
     PURE(Float64LessThan, 2, 0, 1),           // --
     PURE(Float64LessThanOrEqual, 2, 0, 1),    // --
@@ -264,10 +258,10 @@ const PureOperator kPureOperators[] = {
     PURE(Float64ExtractHighWord32, 1, 0, 1),  // --
     PURE(Float64InsertLowWord32, 2, 0, 1),    // --
     PURE(Float64InsertHighWord32, 2, 0, 1),   // --
+    PURE(Float64Neg, 1, 0, 1),                // --
 #undef PURE
 };
 
-}  // namespace
 
 class MachinePureOperatorTest : public TestWithZone {
  protected:
@@ -297,8 +291,6 @@ TEST_F(MachinePureOperatorTest, PureOperators) {
 
 // Optional operators.
 
-namespace {
-
 struct OptionalOperatorEntry {
   const OptionalOperator (MachineOperatorBuilder::*constructor)();
   MachineOperatorBuilder::Flag enabling_flag;
@@ -320,16 +312,11 @@ const OptionalOperatorEntry kOptionalOperators[] = {
     &MachineOperatorBuilder::Name, MachineOperatorBuilder::k##Name, #Name, \
         value_input_count, control_input_count, value_output_count         \
   }
-    OPTIONAL_ENTRY(Float32Max, 2, 0, 1),            // --
-    OPTIONAL_ENTRY(Float32Min, 2, 0, 1),            // --
-    OPTIONAL_ENTRY(Float64Max, 2, 0, 1),            // --
-    OPTIONAL_ENTRY(Float64Min, 2, 0, 1),            // --
     OPTIONAL_ENTRY(Float64RoundDown, 1, 0, 1),      // --
     OPTIONAL_ENTRY(Float64RoundTruncate, 1, 0, 1),  // --
     OPTIONAL_ENTRY(Float64RoundTiesAway, 1, 0, 1),  // --
 #undef OPTIONAL_ENTRY
 };
-}  // namespace
 
 
 class MachineOptionalOperatorTest : public TestWithZone {
@@ -367,11 +354,7 @@ TEST_F(MachineOptionalOperatorTest, OptionalOperators) {
 // Pseudo operators.
 
 
-namespace {
-
 typedef TestWithZone MachineOperatorTest;
-
-}  // namespace
 
 
 TEST_F(MachineOperatorTest, PseudoOperatorsWhenWordSizeIs32Bit) {
@@ -417,6 +400,7 @@ TEST_F(MachineOperatorTest, PseudoOperatorsWhenWordSizeIs64Bit) {
   EXPECT_EQ(machine.Int64LessThanOrEqual(), machine.IntLessThanOrEqual());
 }
 
+}  // namespace machine_operator_unittest
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

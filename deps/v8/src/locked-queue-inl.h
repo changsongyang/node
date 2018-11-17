@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_LOCKED_QUEUE_INL_
-#define V8_LOCKED_QUEUE_INL_
+#ifndef V8_LOCKED_QUEUE_INL_H_
+#define V8_LOCKED_QUEUE_INL_H_
 
-#include "src/atomic-utils.h"
+#include "src/base/atomic-utils.h"
 #include "src/locked-queue.h"
 
 namespace v8 {
@@ -15,14 +15,14 @@ template <typename Record>
 struct LockedQueue<Record>::Node : Malloced {
   Node() : next(nullptr) {}
   Record value;
-  AtomicValue<Node*> next;
+  base::AtomicValue<Node*> next;
 };
 
 
 template <typename Record>
 inline LockedQueue<Record>::LockedQueue() {
   head_ = new Node();
-  CHECK(head_ != nullptr);
+  CHECK_NOT_NULL(head_);
   tail_ = head_;
 }
 
@@ -43,7 +43,7 @@ inline LockedQueue<Record>::~LockedQueue() {
 template <typename Record>
 inline void LockedQueue<Record>::Enqueue(const Record& record) {
   Node* n = new Node();
-  CHECK(n != nullptr);
+  CHECK_NOT_NULL(n);
   n->value = record;
   {
     base::LockGuard<base::Mutex> guard(&tail_mutex_);
@@ -88,4 +88,4 @@ inline bool LockedQueue<Record>::Peek(Record* record) const {
 }  // namespace internal
 }  // namespace v8
 
-#endif  // V8_LOCKED_QUEUE_INL_
+#endif  // V8_LOCKED_QUEUE_INL_H_
