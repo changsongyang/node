@@ -2,181 +2,121 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {NodeOrigin} from "./source-resolver.js"
-import {MINIMUM_EDGE_SEPARATION} from "./edge.js"
+import * as C from "./common/constants";
+import { measureText } from "./common/util";
+import { GraphEdge } from "./phases/graph-phase/graph-edge";
+import { TurboshaftGraphEdge } from "./phases/turboshaft-graph-phase/turboshaft-graph-edge";
+import { TurboshaftGraphOperation } from "./phases/turboshaft-graph-phase/turboshaft-graph-operation";
+import { TurboshaftGraphBlock } from "./phases/turboshaft-graph-phase/turboshaft-graph-block";
 
-export const DEFAULT_NODE_BUBBLE_RADIUS = 12;
-export const NODE_INPUT_WIDTH = 50;
-export const MINIMUM_NODE_OUTPUT_APPROACH = 15;
-const MINIMUM_NODE_INPUT_APPROACH = 15 + 2 * DEFAULT_NODE_BUBBLE_RADIUS;
-
-export function isNodeInitiallyVisible(node) {
-  return node.cfg;
-}
-
-function formatOrigin(origin) {
-  if (origin.nodeId) {
-    return `#${origin.nodeId} in phase ${origin.phase}/${origin.reducer}`;
-  }
-  if (origin.bytecodePosition) {
-    return `Bytecode line ${origin.bytecodePosition} in phase ${origin.phase}/${origin.reducer}`;
-  }
-  return "unknown origin";
-}
-
-export class GNode {
-  control: boolean;
-  opcode: string;
-  live: boolean;
-  inputs: Array<any>;
-  width: number;
-  properties: string;
-  title: string;
-  label: string;
-  origin: NodeOrigin;
-  outputs: Array<any>;
-  outputApproach: number;
-  type: string;
+export abstract class Node<EdgeType extends GraphEdge | TurboshaftGraphEdge<TurboshaftGraphOperation
+  | TurboshaftGraphBlock>> {
   id: number;
+  displayLabel: string;
+  inputs: Array<EdgeType>;
+  outputs: Array<EdgeType>;
+  visible: boolean;
+  outputApproach: number;
+  visitOrderWithinRank: number;
+  rank: number;
   x: number;
   y: number;
-  visible: boolean;
-  rank: number;
-  opinfo: string;
-  labelbbox: { width: number, height: number };
+  labelBox: { width: number, height: number };
 
-  isControl() {
-    return this.control;
+  public abstract getHeight(extendHeight: boolean, compactView: boolean): number;
+  public abstract getWidth(): number;
+
+  constructor(id: number, displayLabel?: string) {
+    this.id = id;
+    this.displayLabel = displayLabel;
+    this.inputs = new Array<EdgeType>();
+    this.outputs = new Array<EdgeType>();
+    this.visible = false;
+    this.outputApproach = C.MINIMUM_NODE_OUTPUT_APPROACH;
+    this.visitOrderWithinRank = 0;
+    this.rank = C.MAX_RANK_SENTINEL;
+    this.x = 0;
+    this.y = 0;
+    if (displayLabel) this.labelBox = measureText(this.displayLabel);
   }
-  isInput() {
-    return this.opcode == 'Parameter' || this.opcode.endsWith('Constant');
-  }
-  isLive() {
-    return this.live !== false;
-  }
-  isJavaScript() {
-    return this.opcode.startsWith('JS');
-  }
-  isSimplified() {
-    if (this.isJavaScript()) return false;
-    return this.opcode.endsWith('Phi') ||
-      this.opcode.startsWith('Boolean') ||
-      this.opcode.startsWith('Number') ||
-      this.opcode.startsWith('String') ||
-      this.opcode.startsWith('Change') ||
-      this.opcode.startsWith('Object') ||
-      this.opcode.startsWith('Reference') ||
-      this.opcode.startsWith('Any') ||
-      this.opcode.endsWith('ToNumber') ||
-      (this.opcode == 'AnyToBoolean') ||
-      (this.opcode.startsWith('Load') && this.opcode.length > 4) ||
-      (this.opcode.startsWith('Store') && this.opcode.length > 5);
-  }
-  isMachine() {
-    return !(this.isControl() || this.isInput() ||
-      this.isJavaScript() || this.isSimplified());
-  }
-  getTotalNodeWidth() {
-    var inputWidth = this.inputs.length * NODE_INPUT_WIDTH;
-    return Math.max(inputWidth, this.width);
-  }
-  getTitle() {
-    var propsString;
-    if (this.properties === undefined) {
-      propsString = "";
-    } else if (this.properties === "") {
-      propsString = "no properties";
-    } else {
-      propsString = "[" + this.properties + "]";
-    }
-    let title = this.title + "\n" + propsString + "\n" + this.opinfo;
-    if (this.origin) {
-      title += `\nOrigin: ${formatOrigin(this.origin)}`;
-    }
-    return title;
-  }
-  getDisplayLabel() {
-    var result = this.id + ":" + this.label;
-    if (result.length > 40) {
-      return this.id + ":" + this.opcode;
-    } else {
-      return result;
-    }
-  }
-  getType() {
-    return this.type;
-  }
-  getDisplayType() {
-    var type_string = this.type;
-    if (type_string == undefined) return "";
-    if (type_string.length > 24) {
-      type_string = type_string.substr(0, 25) + "...";
-    }
-    return type_string;
-  }
-  deepestInputRank() {
-    var deepestRank = 0;
-    this.inputs.forEach(function (e) {
-      if (e.isVisible() && !e.isBackEdge()) {
-        if (e.source.rank > deepestRank) {
-          deepestRank = e.source.rank;
-        }
+
+  public areAnyOutputsVisible(): OutputVisibilityType {
+    let visibleCount = 0;
+    for (const edge of this.outputs) {
+      if (edge.isVisible()) {
+        ++visibleCount;
       }
-    });
-    return deepestRank;
+    }
+    if (this.outputs.length == visibleCount) {
+      return OutputVisibilityType.AllNodesVisible;
+    }
+    if (visibleCount != 0) {
+      return OutputVisibilityType.SomeNodesVisible;
+    }
+    return OutputVisibilityType.NoVisibleNodes;
   }
-  areAnyOutputsVisible() {
-    var visibleCount = 0;
-    this.outputs.forEach(function (e) { if (e.isVisible())++visibleCount; });
-    if (this.outputs.length == visibleCount) return 2;
-    if (visibleCount != 0) return 1;
-    return 0;
-  }
-  setOutputVisibility(v) {
-    var result = false;
-    this.outputs.forEach(function (e) {
-      e.visible = v;
-      if (v) {
-        if (!e.target.visible) {
-          e.target.visible = true;
-          result = true;
-        }
+
+  public setOutputVisibility(visibility: boolean): boolean {
+    let result = false;
+    for (const edge of this.outputs) {
+      edge.visible = visibility;
+      if (visibility && !edge.target.visible) {
+        edge.target.visible = true;
+        result = true;
       }
-    });
+    }
     return result;
   }
-  setInputVisibility(i, v) {
-    var edge = this.inputs[i];
-    edge.visible = v;
-    if (v) {
-      if (!edge.source.visible) {
-        edge.source.visible = true;
-        return true;
-      }
+
+  public setInputVisibility(edgeIdx: number, visibility: boolean): boolean {
+    const edge = this.inputs[edgeIdx];
+    edge.visible = visibility;
+    if (visibility && !edge.source.visible) {
+      edge.source.visible = true;
+      return true;
     }
     return false;
   }
-  getInputApproach(index) {
-    return this.y - MINIMUM_NODE_INPUT_APPROACH -
-      (index % 4) * MINIMUM_EDGE_SEPARATION - DEFAULT_NODE_BUBBLE_RADIUS
-  }
-  getOutputApproach(graph) {
-    return this.y + this.outputApproach + graph.getNodeHeight(this) +
-      + DEFAULT_NODE_BUBBLE_RADIUS;
-  }
-  getInputX(index) {
-    var result = this.getTotalNodeWidth() - (NODE_INPUT_WIDTH / 2) +
-      (index - this.inputs.length + 1) * NODE_INPUT_WIDTH;
-    return result;
-  }
-  getOutputX() {
-    return this.getTotalNodeWidth() - (NODE_INPUT_WIDTH / 2);
-  }
-  hasBackEdges() {
-    return (this.opcode == "Loop") ||
-      ((this.opcode == "Phi" || this.opcode == "EffectPhi") &&
-        this.inputs[this.inputs.length - 1].source.opcode == "Loop");
-  }
-};
 
-export const nodeToStr = (n: GNode) => "N" + n.id;
+  public getInputX(index: number): number {
+    return this.getWidth() - (C.NODE_INPUT_WIDTH / 2) +
+      (index - this.inputs.length + 1) * C.NODE_INPUT_WIDTH;
+  }
+
+  public getOutputX(): number {
+    return this.getWidth() - (C.NODE_INPUT_WIDTH / 2);
+  }
+
+  public getInputApproach(index: number): number {
+    return this.y - C.MINIMUM_NODE_INPUT_APPROACH -
+      (index % 4) * C.MINIMUM_EDGE_SEPARATION - C.DEFAULT_NODE_BUBBLE_RADIUS;
+  }
+
+  public getOutputApproach(extendHeight: boolean): number {
+    return this.y + this.outputApproach + this.getHeight(extendHeight, false) +
+      + C.DEFAULT_NODE_BUBBLE_RADIUS;
+  }
+
+  public compare(other: Node<any>): number {
+    if (this.visitOrderWithinRank < other.visitOrderWithinRank) {
+      return -1;
+    } else if (this.visitOrderWithinRank == other.visitOrderWithinRank) {
+      return 0;
+    }
+    return 1;
+  }
+
+  public identifier(): string {
+    return `${this.id}`;
+  }
+
+  public toString(): string {
+    return `N${this.id}`;
+  }
+}
+
+export enum OutputVisibilityType {
+  NoVisibleNodes,
+  SomeNodesVisible,
+  AllNodesVisible
+}

@@ -26,7 +26,16 @@ const assert = require('assert');
 const events = require('events');
 
 function listener() {}
+
 function listener2() {}
+
+function listener3() {
+  return 0;
+}
+
+function listener4() {
+  return 1;
+}
 
 {
   const ee = new events.EventEmitter();
@@ -78,6 +87,11 @@ function listener2() {}
 }
 
 {
+  const ee = new events.EventEmitter();
+  assert.deepStrictEqual(ee.listeners(), []);
+}
+
+{
   class TestStream extends events.EventEmitter {}
   const s = new TestStream();
   assert.deepStrictEqual(s.listeners('foo'), []);
@@ -100,4 +114,16 @@ function listener2() {}
   ee.emit('foo');
   assert.strictEqual(wrappedListeners.length, 2);
   assert.strictEqual(wrappedListeners[1].listener, listener);
+}
+
+{
+  const ee = new events.EventEmitter();
+  ee.once('foo', listener3);
+  ee.on('foo', listener4);
+  const rawListeners = ee.rawListeners('foo');
+  assert.strictEqual(rawListeners.length, 2);
+  assert.strictEqual(rawListeners[0](), 0);
+  const rawListener = ee.rawListeners('foo');
+  assert.strictEqual(rawListener.length, 1);
+  assert.strictEqual(rawListener[0](), 1);
 }

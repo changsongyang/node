@@ -7,38 +7,48 @@
 function mod() {
   function f0() {
     for (var i = 0; i < 3; i = i + 1 | 0) {
+      %PrepareFunctionForOptimization(f0);
       %OptimizeOsr();
     }
     return {blah: i};
   }
+  %PrepareFunctionForOptimization(f0);
 
   function f1(a) {
     for (var i = 0; i < 3; i = i + 1 | 0) {
+      %PrepareFunctionForOptimization(f1);
       %OptimizeOsr();
     }
     return {blah: i};
   }
+  %PrepareFunctionForOptimization(f1);
 
   function f2(a,b) {
     for (var i = 0; i < 3; i = i + 1 | 0) {
+      %PrepareFunctionForOptimization(f2);
       %OptimizeOsr();
     }
     return {blah: i};
   }
+  %PrepareFunctionForOptimization(f2);
 
   function f3(a,b,c) {
     for (var i = 0; i < 3; i = i + 1 | 0) {
+      %PrepareFunctionForOptimization(f3);
       %OptimizeOsr();
     }
     return {blah: i};
   }
+  %PrepareFunctionForOptimization(f3);
 
   function f4(a,b,c,d) {
     for (var i = 0; i < 3; i = i + 1 | 0) {
+      %PrepareFunctionForOptimization(f4);
       %OptimizeOsr();
     }
     return {blah: i};
   }
+  %PrepareFunctionForOptimization(f4);
 
   function bar() {
     assertEquals(3, f0().blah);

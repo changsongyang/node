@@ -2,49 +2,62 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/torque/earley-parser.h"
+
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "src/torque/ast.h"
-#include "src/torque/earley-parser.h"
 #include "src/torque/utils.h"
 
-namespace v8 {
-namespace internal {
-namespace torque {
+namespace v8::internal::torque {
 
 namespace {
 
-void UpdateSourcePosition(InputPosition from, InputPosition to,
-                          SourcePosition* pos) {
-  while (from != to) {
-    if (*from == '\n') {
-      pos->line += 1;
-      pos->column = 0;
-    } else {
-      pos->column += 1;
+struct LineAndColumnTracker {
+  LineAndColumn previous{0, 0, 0};
+  LineAndColumn current{0, 0, 0};
+
+  void Advance(InputPosition from, InputPosition to) {
+    previous = current;
+    current.offset += std::distance(from, to);
+    while (from != to) {
+      if (*from == '\n') {
+        current.line += 1;
+        current.column = 0;
+      } else {
+        current.column += 1;
+      }
+      ++from;
     }
-    ++from;
   }
-}
+
+  SourcePosition ToSourcePosition() {
+    return {CurrentSourceFile::Get(), previous, current};
+  }
+};
 
 }  // namespace
 
-base::Optional<ParseResult> Rule::RunAction(const Item* completed_item,
-                                            const LexerResult& tokens) const {
+std::optional<ParseResult> Rule::RunAction(const Item* completed_item,
+                                           const LexerResult& tokens) const {
   std::vector<ParseResult> results;
   for (const Item* child : completed_item->Children()) {
     if (!child) continue;
-    base::Optional<ParseResult> child_result =
+    std::optional<ParseResult> child_result =
         child->left()->RunAction(child, tokens);
     if (child_result) results.push_back(std::move(*child_result));
   }
   MatchedInput matched_input = completed_item->GetMatchedInput(tokens);
   CurrentSourcePosition::Scope pos_scope(matched_input.pos);
   ParseResultIterator iterator(std::move(results), matched_input);
-  return action_(&iterator);
+  auto result = action_(&iterator);
+  // Make sure the parse action consumed all the child results.
+  CHECK(!iterator.HasNext());
+  return result;
 }
 
 Symbol& Symbol::operator=(std::initializer_list<Rule> rules) {
@@ -107,14 +120,19 @@ LexerResult Lexer::RunLexer(const std::string& input) {
   InputPosition const end = begin + input.size();
   InputPosition pos = begin;
   InputPosition token_start = pos;
-  CurrentSourcePosition::Scope scope(
-      SourcePosition{CurrentSourceFile::Get(), 0, 0});
+  LineAndColumnTracker line_column_tracker;
+
   match_whitespace_(&pos);
+  line_column_tracker.Advance(token_start, pos);
   while (pos != end) {
-    UpdateSourcePosition(token_start, pos, &CurrentSourcePosition::Get());
     token_start = pos;
     Symbol* symbol = MatchToken(&pos, end);
+    DCHECK_IMPLIES(symbol != nullptr, pos != token_start);
+    InputPosition token_end = pos;
+    line_column_tracker.Advance(token_start, token_end);
     if (!symbol) {
+      CurrentSourcePosition::Scope pos_scope(
+          line_column_tracker.ToSourcePosition());
       ReportError("Lexer Error: unknown token " +
                   StringLiteralQuote(std::string(
                       token_start, token_start + std::min<ptrdiff_t>(
@@ -122,12 +140,15 @@ LexerResult Lexer::RunLexer(const std::string& input) {
     }
     result.token_symbols.push_back(symbol);
     result.token_contents.push_back(
-        {token_start, pos, CurrentSourcePosition::Get()});
+        {token_start, pos, line_column_tracker.ToSourcePosition()});
     match_whitespace_(&pos);
+    line_column_tracker.Advance(token_end, pos);
   }
-  UpdateSourcePosition(token_start, pos, &CurrentSourcePosition::Get());
+
   // Add an additional token position to simplify corner cases.
-  result.token_contents.push_back({pos, pos, CurrentSourcePosition::Get()});
+  line_column_tracker.Advance(token_start, pos);
+  result.token_contents.push_back(
+      {pos, pos, line_column_tracker.ToSourcePosition()});
   return result;
 }
 
@@ -143,26 +164,21 @@ Symbol* Lexer::MatchToken(InputPosition* pos, InputPosition end) {
       symbol = &pair.second;
     }
   }
-  // Check if matched pattern coincides with a keyword. Prefer the keyword in
-  // this case.
-  if (*pos != token_start) {
-    auto found_keyword = keywords_.find(std::string(token_start, *pos));
-    if (found_keyword != keywords_.end()) {
-      return &found_keyword->second;
-    }
-    return symbol;
-  }
-  // Now check for a keyword (that doesn't overlap with a pattern).
-  // Iterate from the end to ensure that if one keyword is a prefix of another,
-  // we first try to match the longer one.
+  size_t pattern_size = *pos - token_start;
+
+  // Now check for keywords. Prefer keywords over patterns unless the pattern is
+  // longer. Iterate from the end to ensure that if one keyword is a prefix of
+  // another, we first try to match the longer one.
   for (auto it = keywords_.rbegin(); it != keywords_.rend(); ++it) {
     const std::string& keyword = it->first;
-    if (static_cast<size_t>(end - *pos) < keyword.size()) continue;
-    if (keyword == std::string(*pos, *pos + keyword.size())) {
-      *pos += keyword.size();
+    if (static_cast<size_t>(end - token_start) < keyword.size()) continue;
+    if (keyword.size() >= pattern_size &&
+        keyword == std::string(token_start, token_start + keyword.size())) {
+      *pos = token_start + keyword.size();
       return &it->second;
     }
   }
+  if (pattern_size > 0) return symbol;
   return nullptr;
 }
 
@@ -176,7 +192,8 @@ const Item* RunEarleyAlgorithm(
   // Worklist for items at the next position.
   std::vector<Item> future_items;
   CurrentSourcePosition::Scope source_position(
-      SourcePosition{CurrentSourceFile::Get(), 0, 0});
+      SourcePosition{CurrentSourceFile::Get(), LineAndColumn::Invalid(),
+                     LineAndColumn::Invalid()});
   std::vector<const Item*> completed_items;
   std::unordered_map<std::pair<size_t, Symbol*>, std::set<const Item*>,
                      base::hash<std::pair<size_t, Symbol*>>>
@@ -266,6 +283,7 @@ const Item* RunEarleyAlgorithm(
 }
 
 // static
+DISABLE_CFI_ICALL
 bool Grammar::MatchChar(int (*char_class)(int), InputPosition* pos) {
   if (**pos && char_class(static_cast<unsigned char>(**pos))) {
     ++*pos;
@@ -298,6 +316,4 @@ bool Grammar::MatchAnyChar(InputPosition* pos) {
   return MatchChar([](char c) { return true; }, pos);
 }
 
-}  // namespace torque
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::torque

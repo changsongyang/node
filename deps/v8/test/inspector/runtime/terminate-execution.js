@@ -55,6 +55,30 @@ let {session, contextGroup, Protocol} =
       .then(InspectorTest.logMessage);
   await Protocol.Debugger.disable();
 
+  InspectorTest.log('Terminate execution with pending microtasks');
+  Protocol.Debugger.enable();
+  const paused2 = Protocol.Debugger.oncePaused();
+  Protocol.Runtime.evaluate({expression: `
+      Promise.resolve().then(() => { console.log('FAIL: microtask ran'); });
+      debugger;
+      for (;;) {}
+  `});
+  await paused2;
+  Protocol.Runtime.terminateExecution().then(InspectorTest.logMessage);
+  await Protocol.Debugger.resume();
   await Protocol.Runtime.disable();
+
+  InspectorTest.log('Terminate execution does not crash on destroy');
+  Protocol.Debugger.enable();
+  Protocol.Runtime.evaluate({
+    expression: `
+    while(true) {
+      let p = new Promise(resolve => setTimeout(resolve, 0));
+      await p;
+    }`
+  });
+  Protocol.Runtime.terminateExecution();
+  await Protocol.Debugger.disable();
+
   InspectorTest.completeTest();
 })();

@@ -19,28 +19,22 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "node_internals.h"
+#include "env-inl.h"
+#include "node_debug.h"
+#include "node_external_reference.h"
 #include "string_bytes.h"
-
-#include <errno.h>
-#include <string.h>
 
 #ifdef __MINGW32__
 # include <io.h>
 #endif  // __MINGW32__
 
 #ifdef __POSIX__
-# include <limits.h>        // PATH_MAX on Solaris.
-# include <netdb.h>         // MAXHOSTNAMELEN on Solaris.
-# include <unistd.h>        // gethostname, sysconf
-# include <sys/param.h>     // MAXHOSTNAMELEN on Linux and the BSDs.
-# include <sys/utsname.h>
+# include <climits>         // PATH_MAX on Solaris.
 #endif  // __POSIX__
 
-// Add Windows fallback.
-#ifndef MAXHOSTNAMELEN
-# define MAXHOSTNAMELEN 256
-#endif  // MAXHOSTNAMELEN
+#include <array>
+#include <cerrno>
+#include <cstring>
 
 namespace node {
 namespace os {
@@ -50,13 +44,15 @@ using v8::ArrayBuffer;
 using v8::Boolean;
 using v8::Context;
 using v8::Float64Array;
-using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::Int32;
 using v8::Integer;
 using v8::Isolate;
 using v8::Local;
+using v8::LocalVector;
 using v8::MaybeLocal;
+using v8::Name;
+using v8::NewStringType;
 using v8::Null;
 using v8::Number;
 using v8::Object;
@@ -66,90 +62,52 @@ using v8::Value;
 
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  char buf[MAXHOSTNAMELEN + 1];
+  char buf[UV_MAXHOSTNAMESIZE];
+  size_t size = sizeof(buf);
+  int r = uv_os_gethostname(buf, &size);
 
-  if (gethostname(buf, sizeof(buf))) {
-#ifdef __POSIX__
-    int errorno = errno;
-#else  // __MINGW32__
-    int errorno = WSAGetLastError();
-#endif  // __POSIX__
+  if (r != 0) {
     CHECK_GE(args.Length(), 1);
-    env->CollectExceptionInfo(args[args.Length() - 1], errorno, "gethostname");
-    return args.GetReturnValue().SetUndefined();
-  }
-  buf[sizeof(buf) - 1] = '\0';
-
-  args.GetReturnValue().Set(OneByteString(env->isolate(), buf));
-}
-
-
-static void GetOSType(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  const char* rval;
-
-#ifdef __POSIX__
-  struct utsname info;
-  if (uname(&info) < 0) {
-    CHECK_GE(args.Length(), 1);
-    env->CollectExceptionInfo(args[args.Length() - 1], errno, "uname");
-    return args.GetReturnValue().SetUndefined();
-  }
-  rval = info.sysname;
-#else  // __MINGW32__
-  rval = "Windows_NT";
-#endif  // __POSIX__
-
-  args.GetReturnValue().Set(OneByteString(env->isolate(), rval));
-}
-
-
-static void GetOSRelease(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  const char* rval;
-
-#ifdef __POSIX__
-  struct utsname info;
-  if (uname(&info) < 0) {
-    CHECK_GE(args.Length(), 1);
-    env->CollectExceptionInfo(args[args.Length() - 1], errno, "uname");
-    return args.GetReturnValue().SetUndefined();
-  }
-# ifdef _AIX
-  char release[256];
-  snprintf(release, sizeof(release),
-           "%s.%s", info.version, info.release);
-  rval = release;
-# else
-  rval = info.release;
-# endif
-#else  // Windows
-  char release[256];
-  OSVERSIONINFOW info;
-
-  info.dwOSVersionInfoSize = sizeof(info);
-
-  // Don't complain that GetVersionEx is deprecated; there is no alternative.
-  #pragma warning(suppress : 4996)
-  if (GetVersionExW(&info) == 0)
+    USE(env->CollectUVExceptionInfo(
+        args[args.Length() - 1], r, "uv_os_gethostname"));
     return;
+  }
 
-  snprintf(release,
-           sizeof(release),
-           "%d.%d.%d",
-           static_cast<int>(info.dwMajorVersion),
-           static_cast<int>(info.dwMinorVersion),
-           static_cast<int>(info.dwBuildNumber));
-  rval = release;
-#endif  // __POSIX__
-
-  args.GetReturnValue().Set(OneByteString(env->isolate(), rval));
+  Local<Value> ret;
+  if (String::NewFromUtf8(env->isolate(), buf).ToLocal(&ret)) {
+    args.GetReturnValue().Set(ret);
+  }
 }
 
+static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  uv_utsname_t info;
+  int err = uv_os_uname(&info);
+
+  if (err != 0) {
+    CHECK_GE(args.Length(), 1);
+    USE(env->CollectUVExceptionInfo(
+        args[args.Length() - 1], err, "uv_os_uname"));
+    return;
+  }
+
+  // [sysname, version, release, machine]
+  Local<Value> osInformation[4];
+  if (String::NewFromUtf8(env->isolate(), info.sysname)
+          .ToLocal(&osInformation[0]) &&
+      String::NewFromUtf8(env->isolate(), info.version)
+          .ToLocal(&osInformation[1]) &&
+      String::NewFromUtf8(env->isolate(), info.release)
+          .ToLocal(&osInformation[2]) &&
+      String::NewFromUtf8(env->isolate(), info.machine)
+          .ToLocal(&osInformation[3])) {
+    args.GetReturnValue().Set(
+        Array::New(env->isolate(), osInformation, arraysize(osInformation)));
+  }
+}
 
 static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  Isolate* isolate = env->isolate();
+  Isolate* isolate = args.GetIsolate();
 
   uv_cpu_info_t* cpu_infos;
   int count;
@@ -162,16 +120,22 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
   // assemble them into objects in JS than to call Object::Set() repeatedly
   // The array is in the format
   // [model, speed, (5 entries of cpu_times), model2, speed2, ...]
-  std::vector<Local<Value>> result(count * 7);
+  LocalVector<Value> result(isolate);
+  result.reserve(count * 7);
   for (int i = 0; i < count; i++) {
     uv_cpu_info_t* ci = cpu_infos + i;
-    result[i * 7] = OneByteString(isolate, ci->model);
-    result[i * 7 + 1] = Number::New(isolate, ci->speed);
-    result[i * 7 + 2] = Number::New(isolate, ci->cpu_times.user);
-    result[i * 7 + 3] = Number::New(isolate, ci->cpu_times.nice);
-    result[i * 7 + 4] = Number::New(isolate, ci->cpu_times.sys);
-    result[i * 7 + 5] = Number::New(isolate, ci->cpu_times.idle);
-    result[i * 7 + 6] = Number::New(isolate, ci->cpu_times.irq);
+    result.emplace_back(OneByteString(isolate, ci->model));
+    result.emplace_back(Number::New(isolate, ci->speed));
+    result.emplace_back(
+        Number::New(isolate, static_cast<double>(ci->cpu_times.user)));
+    result.emplace_back(
+        Number::New(isolate, static_cast<double>(ci->cpu_times.nice)));
+    result.emplace_back(
+        Number::New(isolate, static_cast<double>(ci->cpu_times.sys)));
+    result.emplace_back(
+        Number::New(isolate, static_cast<double>(ci->cpu_times.idle)));
+    result.emplace_back(
+        Number::New(isolate, static_cast<double>(ci->cpu_times.irq)));
   }
 
   uv_free_cpu_info(cpu_infos, count);
@@ -180,26 +144,41 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
-  double amount = uv_get_free_memory();
-  if (amount < 0)
-    return;
+  double amount = static_cast<double>(uv_get_free_memory());
   args.GetReturnValue().Set(amount);
 }
 
+static double FastGetFreeMemory(Local<Value> receiver) {
+  TRACK_V8_FAST_API_CALL("os.freemem");
+  return static_cast<double>(uv_get_free_memory());
+}
+
+static v8::CFunction fast_get_free_memory(
+    v8::CFunction::Make(FastGetFreeMemory));
 
 static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
-  double amount = uv_get_total_memory();
-  if (amount < 0)
-    return;
+  double amount = static_cast<double>(uv_get_total_memory());
   args.GetReturnValue().Set(amount);
 }
 
+double FastGetTotalMemory(Local<Value> receiver) {
+  TRACK_V8_FAST_API_CALL("os.totalmem");
+  return static_cast<double>(uv_get_total_memory());
+}
+
+static v8::CFunction fast_get_total_memory(
+    v8::CFunction::Make(FastGetTotalMemory));
 
 static void GetUptime(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
   double uptime;
   int err = uv_uptime(&uptime);
-  if (err == 0)
-    args.GetReturnValue().Set(uptime);
+  if (err != 0) {
+    USE(env->CollectUVExceptionInfo(args[args.Length() - 1], err, "uv_uptime"));
+    return;
+  }
+
+  args.GetReturnValue().Set(uptime);
 }
 
 
@@ -208,35 +187,38 @@ static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
   Local<Float64Array> array = args[0].As<Float64Array>();
   CHECK_EQ(array->Length(), 3);
   Local<ArrayBuffer> ab = array->Buffer();
-  double* loadavg = static_cast<double*>(ab->GetContents().Data());
+  double* loadavg = static_cast<double*>(ab->Data());
   uv_loadavg(loadavg);
 }
 
 
 static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
   uv_interface_address_t* interfaces;
   int count, i;
   char ip[INET6_ADDRSTRLEN];
   char netmask[INET6_ADDRSTRLEN];
-  char mac[18];
-  Local<Object> ret, o;
+  std::array<char, 18> mac;
   Local<String> name, family;
-  Local<Array> ifarr;
 
   int err = uv_interface_addresses(&interfaces, &count);
 
-  ret = Object::New(env->isolate());
+  if (err == UV_ENOSYS) return;
 
-  if (err == UV_ENOSYS) {
-    return args.GetReturnValue().Set(ret);
-  } else if (err) {
+  if (err) {
     CHECK_GE(args.Length(), 1);
-    env->CollectUVExceptionInfo(args[args.Length() - 1], errno,
-                                "uv_interface_addresses");
-    return args.GetReturnValue().SetUndefined();
+    USE(env->CollectUVExceptionInfo(
+        args[args.Length() - 1], errno, "uv_interface_addresses"));
+    return;
   }
 
+  auto cleanup =
+      OnScopeLeave([&]() { uv_free_interface_addresses(interfaces, count); });
+
+  Local<Value> no_scope_id = Integer::New(isolate, -1);
+  LocalVector<Value> result(isolate);
+  result.reserve(count * 7);
   for (i = 0; i < count; i++) {
     const char* const raw_name = interfaces[i].name;
 
@@ -245,19 +227,13 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
     // to assume UTF8 as the default as well. It’s what people will expect if
     // they name the interface from any input that uses UTF-8, which should be
     // the most frequent case by far these days.)
-    name = String::NewFromUtf8(env->isolate(), raw_name,
-        v8::NewStringType::kNormal).ToLocalChecked();
-
-    if (ret->Has(env->context(), name).FromJust()) {
-      ifarr = Local<Array>::Cast(ret->Get(env->context(),
-                                          name).ToLocalChecked());
-    } else {
-      ifarr = Array::New(env->isolate());
-      ret->Set(env->context(), name, ifarr).FromJust();
+    if (!String::NewFromUtf8(isolate, raw_name).ToLocal(&name)) {
+      // Error occurred creating the string.
+      return;
     }
 
-    snprintf(mac,
-             18,
+    snprintf(mac.data(),
+             mac.size(),
              "%02x:%02x:%02x:%02x:%02x:%02x",
              static_cast<unsigned char>(interfaces[i].phys_addr[0]),
              static_cast<unsigned char>(interfaces[i].phys_addr[1]),
@@ -279,34 +255,22 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
       family = env->unknown_string();
     }
 
-    o = Object::New(env->isolate());
-    o->Set(env->context(),
-           env->address_string(),
-           OneByteString(env->isolate(), ip)).FromJust();
-    o->Set(env->context(),
-           env->netmask_string(),
-           OneByteString(env->isolate(), netmask)).FromJust();
-    o->Set(env->context(),
-           env->family_string(), family).FromJust();
-    o->Set(env->context(),
-           env->mac_string(),
-           FIXED_ONE_BYTE_STRING(env->isolate(), mac)).FromJust();
-
+    result.emplace_back(name);
+    result.emplace_back(OneByteString(isolate, ip));
+    result.emplace_back(OneByteString(isolate, netmask));
+    result.emplace_back(family);
+    result.emplace_back(OneByteString(isolate, mac.data(), mac.size() - 1));
+    result.emplace_back(
+        Boolean::New(env->isolate(), interfaces[i].is_internal));
     if (interfaces[i].address.address4.sin_family == AF_INET6) {
       uint32_t scopeid = interfaces[i].address.address6.sin6_scope_id;
-      o->Set(env->context(), env->scopeid_string(),
-             Integer::NewFromUnsigned(env->isolate(), scopeid)).FromJust();
+      result.emplace_back(Integer::NewFromUnsigned(isolate, scopeid));
+    } else {
+      result.emplace_back(no_scope_id);
     }
-
-    const bool internal = interfaces[i].is_internal;
-    o->Set(env->context(), env->internal_string(),
-           internal ? True(env->isolate()) : False(env->isolate())).FromJust();
-
-    ifarr->Set(env->context(), ifarr->Length(), o).FromJust();
   }
 
-  uv_free_interface_addresses(interfaces, count);
-  args.GetReturnValue().Set(ret);
+  args.GetReturnValue().Set(Array::New(isolate, result.data(), result.size()));
 }
 
 
@@ -319,15 +283,16 @@ static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
 
   if (err) {
     CHECK_GE(args.Length(), 1);
-    env->CollectUVExceptionInfo(args[args.Length() - 1], err, "uv_os_homedir");
-    return args.GetReturnValue().SetUndefined();
+    USE(env->CollectUVExceptionInfo(
+        args[args.Length() - 1], err, "uv_os_homedir"));
+    return;
   }
 
-  Local<String> home = String::NewFromUtf8(env->isolate(),
-                                           buf,
-                                           v8::NewStringType::kNormal,
-                                           len).ToLocalChecked();
-  args.GetReturnValue().Set(home);
+  Local<String> home;
+  if (String::NewFromUtf8(env->isolate(), buf, NewStringType::kNormal, len)
+          .ToLocal(&home)) {
+    args.GetReturnValue().Set(home);
+  }
 }
 
 
@@ -340,66 +305,65 @@ static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
     Local<Object> options = args[0].As<Object>();
     MaybeLocal<Value> maybe_encoding = options->Get(env->context(),
                                                     env->encoding_string());
-    if (maybe_encoding.IsEmpty())
-      return;
+    Local<Value> encoding_opt;
+    if (!maybe_encoding.ToLocal(&encoding_opt))
+        return;
 
-    Local<Value> encoding_opt = maybe_encoding.ToLocalChecked();
     encoding = ParseEncoding(env->isolate(), encoding_opt, UTF8);
   } else {
     encoding = UTF8;
   }
 
-  const int err = uv_os_get_passwd(&pwd);
-
-  if (err) {
+  if (const int err = uv_os_get_passwd(&pwd)) {
     CHECK_GE(args.Length(), 2);
-    env->CollectUVExceptionInfo(args[args.Length() - 1], err,
-                                "uv_os_get_passwd");
-    return args.GetReturnValue().SetUndefined();
-  }
-
-  OnScopeLeave free_passwd([&]() { uv_os_free_passwd(&pwd); });
-
-  Local<Value> error;
-
-  Local<Value> uid = Number::New(env->isolate(), pwd.uid);
-  Local<Value> gid = Number::New(env->isolate(), pwd.gid);
-  MaybeLocal<Value> username = StringBytes::Encode(env->isolate(),
-                                                   pwd.username,
-                                                   encoding,
-                                                   &error);
-  MaybeLocal<Value> homedir = StringBytes::Encode(env->isolate(),
-                                                  pwd.homedir,
-                                                  encoding,
-                                                  &error);
-  MaybeLocal<Value> shell;
-
-  if (pwd.shell == nullptr)
-    shell = Null(env->isolate());
-  else
-    shell = StringBytes::Encode(env->isolate(), pwd.shell, encoding, &error);
-
-  if (username.IsEmpty() || homedir.IsEmpty() || shell.IsEmpty()) {
-    CHECK(!error.IsEmpty());
-    env->isolate()->ThrowException(error);
+    USE(env->CollectUVExceptionInfo(
+        args[args.Length() - 1], err, "uv_os_get_passwd"));
     return;
   }
 
-  Local<Object> entry = Object::New(env->isolate());
+  auto free_passwd = OnScopeLeave([&] { uv_os_free_passwd(&pwd); });
 
-  entry->Set(env->context(), env->uid_string(), uid).FromJust();
-  entry->Set(env->context(), env->gid_string(), gid).FromJust();
-  entry->Set(env->context(),
-             env->username_string(),
-             username.ToLocalChecked()).FromJust();
-  entry->Set(env->context(),
-             env->homedir_string(),
-             homedir.ToLocalChecked()).FromJust();
-  entry->Set(env->context(),
-             env->shell_string(),
-             shell.ToLocalChecked()).FromJust();
+#ifdef _WIN32
+  Local<Value> uid = Number::New(
+      env->isolate(),
+      static_cast<double>(static_cast<int32_t>(pwd.uid & 0xFFFFFFFF)));
+  Local<Value> gid = Number::New(
+      env->isolate(),
+      static_cast<double>(static_cast<int32_t>(pwd.gid & 0xFFFFFFFF)));
+#else
+  Local<Value> uid = Number::New(env->isolate(), pwd.uid);
+  Local<Value> gid = Number::New(env->isolate(), pwd.gid);
+#endif
 
-  args.GetReturnValue().Set(entry);
+  Local<Value> username;
+  if (!StringBytes::Encode(env->isolate(), pwd.username, encoding)
+           .ToLocal(&username)) {
+    return;
+  }
+
+  Local<Value> homedir;
+  if (!StringBytes::Encode(env->isolate(), pwd.homedir, encoding)
+           .ToLocal(&homedir)) {
+    return;
+  }
+
+  Local<Value> shell = Null(env->isolate());
+  if (pwd.shell != nullptr &&
+      !StringBytes::Encode(env->isolate(), pwd.shell, encoding)
+           .ToLocal(&shell)) {
+    return;
+  }
+
+  constexpr size_t kRetLength = 5;
+  Local<Name> names[kRetLength] = {env->uid_string(),
+                                   env->gid_string(),
+                                   env->username_string(),
+                                   env->homedir_string(),
+                                   env->shell_string()};
+  Local<Value> values[kRetLength] = {uid, gid, username, homedir, shell};
+
+  args.GetReturnValue().Set(Object::New(
+      env->isolate(), Null(env->isolate()), &names[0], &values[0], kRetLength));
 }
 
 
@@ -416,7 +380,10 @@ static void SetPriority(const FunctionCallbackInfo<Value>& args) {
 
   if (err) {
     CHECK(args[2]->IsObject());
-    env->CollectUVExceptionInfo(args[2], err, "uv_os_setpriority");
+    if (env->CollectUVExceptionInfo(args[2], err, "uv_os_setpriority")
+            .IsNothing()) {
+      return;
+    }
   }
 
   args.GetReturnValue().Set(err);
@@ -435,37 +402,78 @@ static void GetPriority(const FunctionCallbackInfo<Value>& args) {
 
   if (err) {
     CHECK(args[1]->IsObject());
-    env->CollectUVExceptionInfo(args[1], err, "uv_os_getpriority");
+    USE(env->CollectUVExceptionInfo(args[1], err, "uv_os_getpriority"));
     return;
   }
 
   args.GetReturnValue().Set(priority);
 }
 
+static void GetAvailableParallelism(const FunctionCallbackInfo<Value>& args) {
+  unsigned int parallelism = uv_available_parallelism();
+  args.GetReturnValue().Set(parallelism);
+}
+
+uint32_t FastGetAvailableParallelism(v8::Local<v8::Value> receiver) {
+  TRACK_V8_FAST_API_CALL("os.availableParallelism");
+  return uv_available_parallelism();
+}
+
+static v8::CFunction fast_get_available_parallelism(
+    v8::CFunction::Make(FastGetAvailableParallelism));
 
 void Initialize(Local<Object> target,
                 Local<Value> unused,
-                Local<Context> context) {
+                Local<Context> context,
+                void* priv) {
   Environment* env = Environment::GetCurrent(context);
-  env->SetMethod(target, "getHostname", GetHostname);
-  env->SetMethod(target, "getLoadAvg", GetLoadAvg);
-  env->SetMethod(target, "getUptime", GetUptime);
-  env->SetMethod(target, "getTotalMem", GetTotalMemory);
-  env->SetMethod(target, "getFreeMem", GetFreeMemory);
-  env->SetMethod(target, "getCPUs", GetCPUInfo);
-  env->SetMethod(target, "getOSType", GetOSType);
-  env->SetMethod(target, "getOSRelease", GetOSRelease);
-  env->SetMethod(target, "getInterfaceAddresses", GetInterfaceAddresses);
-  env->SetMethod(target, "getHomeDirectory", GetHomeDirectory);
-  env->SetMethod(target, "getUserInfo", GetUserInfo);
-  env->SetMethod(target, "setPriority", SetPriority);
-  env->SetMethod(target, "getPriority", GetPriority);
-  target->Set(env->context(),
-              FIXED_ONE_BYTE_STRING(env->isolate(), "isBigEndian"),
-              Boolean::New(env->isolate(), IsBigEndian())).FromJust();
+  SetMethod(context, target, "getHostname", GetHostname);
+  SetMethod(context, target, "getLoadAvg", GetLoadAvg);
+  SetMethod(context, target, "getUptime", GetUptime);
+  SetFastMethodNoSideEffect(
+      context, target, "getTotalMem", GetTotalMemory, &fast_get_total_memory);
+  SetFastMethodNoSideEffect(
+      context, target, "getFreeMem", GetFreeMemory, &fast_get_free_memory);
+  SetMethod(context, target, "getCPUs", GetCPUInfo);
+  SetMethod(context, target, "getInterfaceAddresses", GetInterfaceAddresses);
+  SetMethod(context, target, "getHomeDirectory", GetHomeDirectory);
+  SetMethod(context, target, "getUserInfo", GetUserInfo);
+  SetMethod(context, target, "setPriority", SetPriority);
+  SetMethod(context, target, "getPriority", GetPriority);
+  SetFastMethodNoSideEffect(context,
+                            target,
+                            "getAvailableParallelism",
+                            GetAvailableParallelism,
+                            &fast_get_available_parallelism);
+  SetMethod(context, target, "getOSInformation", GetOSInformation);
+  target
+      ->Set(context,
+            FIXED_ONE_BYTE_STRING(env->isolate(), "isBigEndian"),
+            Boolean::New(env->isolate(), IsBigEndian()))
+      .Check();
+}
+
+void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  registry->Register(GetHostname);
+  registry->Register(GetLoadAvg);
+  registry->Register(GetUptime);
+  registry->Register(GetTotalMemory);
+  registry->Register(fast_get_total_memory);
+  registry->Register(GetFreeMemory);
+  registry->Register(fast_get_free_memory);
+  registry->Register(GetCPUInfo);
+  registry->Register(GetInterfaceAddresses);
+  registry->Register(GetHomeDirectory);
+  registry->Register(GetUserInfo);
+  registry->Register(SetPriority);
+  registry->Register(GetPriority);
+  registry->Register(GetAvailableParallelism);
+  registry->Register(fast_get_available_parallelism);
+  registry->Register(GetOSInformation);
 }
 
 }  // namespace os
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(os, node::os::Initialize)
+NODE_BINDING_CONTEXT_AWARE_INTERNAL(os, node::os::Initialize)
+NODE_BINDING_EXTERNAL_REFERENCE(os, node::os::RegisterExternalReferences)

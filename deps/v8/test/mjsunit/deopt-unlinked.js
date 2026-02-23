@@ -2,27 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt --no-always-opt
+// Flags: --allow-natives-syntax --turbofan
+// The deopt count is stored in the feedback vector which gets cleared when
+// bytecode is flushed, which --gc-interval can cause in stress modes.
+// Flags: --no-flush-bytecode --no-stress-flush-code
 
-function foo() {}
-
-assertEquals(0, %GetDeoptCount(foo));
-
+function foo() {};
+%PrepareFunctionForOptimization(foo);
 foo();
 foo();
 %OptimizeFunctionOnNextCall(foo);
 foo();
 
 assertOptimized(foo);
-assertEquals(0, %GetDeoptCount(foo));
 
 // Unlink the function.
 %DeoptimizeFunction(foo);
 
 assertUnoptimized(foo);
-assertEquals(1, %GetDeoptCount(foo));
 
 foo();
 
 assertUnoptimized(foo);
-assertEquals(1, %GetDeoptCount(foo));

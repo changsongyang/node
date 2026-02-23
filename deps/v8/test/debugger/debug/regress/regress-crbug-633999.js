@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --opt --no-turbo
+// Flags: --turbofan --no-turbo
 
 var Debug = debug.Debug
 var exception = null;
@@ -28,6 +28,7 @@ Debug.setListener(listener);
     } catch (e) {
     }
   }
+  %PrepareFunctionForOptimization(f);
   f();
   f();
   %OptimizeFunctionOnNextCall(f);

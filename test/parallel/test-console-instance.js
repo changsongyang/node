@@ -36,24 +36,24 @@ process.stdout.write = process.stderr.write = common.mustNotCall();
 // Make sure that the "Console" function exists.
 assert.strictEqual(typeof Console, 'function');
 
-assert.strictEqual(requiredConsole, global.console);
+assert.strictEqual(requiredConsole, globalThis.console);
 // Make sure the custom instanceof of Console works
-assert.ok(global.console instanceof Console);
+assert.ok(globalThis.console instanceof Console);
 assert.ok(!({} instanceof Console));
 
 // Make sure that the Console constructor throws
 // when not given a writable stream instance.
-common.expectsError(
+assert.throws(
   () => { new Console(); },
   {
     code: 'ERR_CONSOLE_WRITABLE_STREAM',
-    type: TypeError,
+    name: 'TypeError',
     message: /stdout/
   }
 );
 
 // Console constructor should throw if stderr exists but is not writable.
-common.expectsError(
+assert.throws(
   () => {
     out.write = () => {};
     err.write = undefined;
@@ -61,7 +61,7 @@ common.expectsError(
   },
   {
     code: 'ERR_CONSOLE_WRITABLE_STREAM',
-    type: TypeError,
+    name: 'TypeError',
     message: /stderr/
   }
 );
@@ -128,3 +128,21 @@ out.write = err.write = (d) => {};
   assert.throws(() => c2.warn('foo'), /^Error: err$/);
   assert.throws(() => c2.dir('foo'), /^Error: out$/);
 }
+
+// Console constructor throws if inspectOptions is not an object.
+[null, true, false, 'foo', 5, Symbol()].forEach((inspectOptions) => {
+  assert.throws(
+    () => {
+      new Console({
+        stdout: out,
+        stderr: err,
+        inspectOptions
+      });
+    },
+    {
+      message: 'The "options.inspectOptions" property must be of type object.' +
+               common.invalidArgTypeHelper(inspectOptions),
+      code: 'ERR_INVALID_ARG_TYPE'
+    }
+  );
+});

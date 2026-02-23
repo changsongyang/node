@@ -32,9 +32,9 @@ const server = http.Server((req, res) => {
   req.on('data', (chunk) => {
     result += chunk;
   }).on('end', () => {
-    server.close();
     res.writeHead(200);
     res.end('hello world\n');
+    server.close();
   });
 
 });
@@ -54,5 +54,5 @@ server.listen(0, function() {
 });
 
 process.on('exit', () => {
-  assert.strictEqual(expected, result);
+  assert.strictEqual(result, expected);
 });

@@ -22,6 +22,8 @@ async function validateAppendBuffer() {
   await fileHandle.appendFile(buffer);
   const appendedFileData = fs.readFileSync(filePath);
   assert.deepStrictEqual(appendedFileData, buffer);
+
+  await fileHandle.close();
 }
 
 async function validateAppendString() {
@@ -33,8 +35,25 @@ async function validateAppendString() {
   const stringAsBuffer = Buffer.from(string, 'utf8');
   const appendedFileData = fs.readFileSync(filePath);
   assert.deepStrictEqual(appendedFileData, stringAsBuffer);
+
+  await fileHandle.close();
 }
 
-validateAppendBuffer()
-  .then(validateAppendString)
-  .then(common.mustCall());
+async function doAppendAndCancel() {
+  const filePathForHandle = path.resolve(tmpDir, 'dogs-running.txt');
+  const fileHandle = await open(filePathForHandle, 'w+');
+  const buffer = Buffer.from('dogs running'.repeat(512 * 1024), 'utf8');
+  const controller = new AbortController();
+  const { signal } = controller;
+  process.nextTick(() => controller.abort());
+  await assert.rejects(fileHandle.appendFile(buffer, { signal }), {
+    name: 'AbortError'
+  });
+  await fileHandle.close();
+}
+
+Promise.all([
+  validateAppendBuffer(),
+  validateAppendString(),
+  doAppendAndCancel(),
+]).then(common.mustCall());

@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 // Basic tests.
 
@@ -29,11 +27,11 @@ function assertMemoryIsValid(memory) {
   assertThrows(() => new WebAssembly.Memory(1), TypeError);
   assertThrows(() => new WebAssembly.Memory(""), TypeError);
 
-  assertThrows(() => new WebAssembly.Memory({initial: -1}), RangeError);
-  assertThrows(() => new WebAssembly.Memory({initial: outOfUint32RangeValue}), RangeError);
+  assertThrows(() => new WebAssembly.Memory({initial: -1}), TypeError);
+  assertThrows(() => new WebAssembly.Memory({initial: outOfUint32RangeValue}), TypeError);
 
-  assertThrows(() => new WebAssembly.Memory({initial: 10, maximum: -1}), RangeError);
-  assertThrows(() => new WebAssembly.Memory({initial: 10, maximum: outOfUint32RangeValue}), RangeError);
+  assertThrows(() => new WebAssembly.Memory({initial: 10, maximum: -1}), TypeError);
+  assertThrows(() => new WebAssembly.Memory({initial: 10, maximum: outOfUint32RangeValue}), TypeError);
   assertThrows(() => new WebAssembly.Memory({initial: 10, maximum: 9}), RangeError);
 
   let memory = new WebAssembly.Memory({initial: 1});
@@ -42,12 +40,6 @@ function assertMemoryIsValid(memory) {
 
 (function TestConstructorWithMaximum() {
   let memory = new WebAssembly.Memory({initial: 1, maximum: 10});
-  assertMemoryIsValid(memory);
-})();
-
-(function TestInitialIsUndefined() {
-  // New memory with initial = undefined, which means initial = 0.
-  let memory = new WebAssembly.Memory({initial: undefined});
   assertMemoryIsValid(memory);
 })();
 
@@ -74,7 +66,7 @@ function assertMemoryIsValid(memory) {
   assertMemoryIsValid(memory);
 })();
 
-(function TestMaximumDoesHasProperty() {
+(function TestMaximumDoesNotHasProperty() {
   var hasPropertyWasCalled = false;
   var desc = {initial: 10};
   var proxy = new Proxy({maximum: 16}, {
@@ -83,7 +75,7 @@ function assertMemoryIsValid(memory) {
   Object.setPrototypeOf(desc, proxy);
   let memory = new WebAssembly.Memory(desc);
   assertMemoryIsValid(memory);
-  assertTrue(hasPropertyWasCalled);
+  assertFalse(hasPropertyWasCalled);
 })();
 
 (function TestBuffer() {

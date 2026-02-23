@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 // Ensure that we properly check for elements on the prototypes.
 function foo(o) {
@@ -12,6 +12,7 @@ function foo(o) {
 }
 
 var a = [];
+%PrepareFunctionForOptimization(foo);
 assertEquals("", foo(a));
 assertEquals("", foo(a));
 %OptimizeFunctionOnNextCall(foo);

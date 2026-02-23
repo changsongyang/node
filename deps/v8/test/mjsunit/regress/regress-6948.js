@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 var o = {};
 
 function foo(s) { return o[s]; }
 
+%PrepareFunctionForOptimization(foo);
 var s = 'c' + 'c';
 foo(s);
 foo(s);

@@ -20,7 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const http = require('http');
 
@@ -47,7 +47,9 @@ const server = http.createServer((req, res) => {
   }, 100);
 });
 
-server.listen(0, function() {
+server.listen(0, common.mustCall(function() {
+  // Anonymous function rather than arrow function to test `this` value.
+  assert.strictEqual(this, server);
   const req = http.request({
     port: this.address().port,
     path: '/',
@@ -68,9 +70,9 @@ server.listen(0, function() {
     }, 100);
   });
   req.end(expectedServer);
-});
+}));
 
 process.on('exit', () => {
-  assert.strictEqual(expectedServer, resultServer);
-  assert.strictEqual(expectedClient, resultClient);
+  assert.strictEqual(resultServer, expectedServer);
+  assert.strictEqual(resultClient, expectedClient);
 });

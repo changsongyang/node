@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --opt --allow-natives-syntax --no-always-opt
+// Flags: --turbofan --allow-natives-syntax
 
 class A {
   constructor() { }
@@ -15,6 +15,10 @@ class B extends A {
   }
 }
 
+test = new B(1);
+assertThrows(() => {new B(0)}, ReferenceError);
+
+%PrepareFunctionForOptimization(B);
 test = new B(1);
 test = new B(1);
 %OptimizeFunctionOnNextCall(B);

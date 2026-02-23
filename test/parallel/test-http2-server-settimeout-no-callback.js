@@ -8,26 +8,23 @@ const assert = require('assert');
 const http2 = require('http2');
 
 // Verify that setTimeout callback verifications work correctly
-const verifyCallbacks = (server) => {
+const verifyCallbacks = common.mustCall((server) => {
   const testTimeout = 10;
-  const notFunctions = [true, 1, {}, [], null, 'test'];
-  const invalidCallBackError = {
-    type: TypeError,
-    code: 'ERR_INVALID_CALLBACK',
-    message: 'Callback must be a function'
-  };
 
-  notFunctions.forEach((notFunction) =>
-    common.expectsError(
+  [true, 1, {}, [], null, 'test'].forEach((notFunction) => {
+    assert.throws(
       () => server.setTimeout(testTimeout, notFunction),
-      invalidCallBackError
-    )
-  );
+      {
+        name: 'TypeError',
+        code: 'ERR_INVALID_ARG_TYPE',
+      }
+    );
+  });
 
   // No callback
   const returnedVal = server.setTimeout(testTimeout);
   assert.strictEqual(returnedVal.timeout, testTimeout);
-};
+}, 2);
 
 // Test with server
 {

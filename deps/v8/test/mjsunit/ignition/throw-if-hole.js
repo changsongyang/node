@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --opt --allow-natives-syntax --no-always-opt
+// Flags: --turbofan --allow-natives-syntax
 
 function f(b) {
  if (b == 1) {
@@ -10,6 +10,10 @@ function f(b) {
  }
 }
 
+f(0);
+assertThrows(() => {f(1)}, ReferenceError);
+
+%PrepareFunctionForOptimization(f);
 f(0);
 f(0);
 %OptimizeFunctionOnNextCall(f);

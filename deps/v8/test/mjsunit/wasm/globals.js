@@ -2,26 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function TestMultipleInstances() {
   print("TestMultipleInstances");
 
   var builder = new WasmModuleBuilder();
 
-  let g = builder.addGlobal(kWasmI32, true);
+  let g = builder.addGlobal(kWasmI32, true, false);
   let sig_index = builder.addType(kSig_i_v);
   builder.addFunction("get", sig_index)
     .addBody([
-      kExprGetGlobal, g.index])
+      kExprGlobalGet, g.index])
     .exportAs("get");
   builder.addFunction("set", kSig_v_i)
     .addBody([
-      kExprGetLocal, 0,
-      kExprSetGlobal, g.index])
+      kExprLocalGet, 0,
+      kExprGlobalSet, g.index])
     .exportAs("set");
 
   let module = new WebAssembly.Module(builder.toBuffer());
@@ -55,9 +52,9 @@ function TestImported(type, val, expected) {
   var sig = makeSig([], [type]);
   var g = builder.addImportedGlobal("uuu", "foo", type);
   builder.addFunction("main", sig)
-    .addBody([kExprGetGlobal, g])
+    .addBody([kExprGlobalGet, g])
     .exportAs("main");
-  builder.addGlobal(kWasmI32);  // pad
+  builder.addGlobal(kWasmI32, false, false);  // pad
 
   var instance = builder.instantiate({uuu: {foo: val}});
   assertEquals(expected, instance.exports.main());
@@ -77,7 +74,7 @@ TestImported(kWasmF64, 77777.88888, 77777.88888);
   let sig_index = builder.addType(kSig_i_v);
   builder.addFunction("main", sig_index)
     .addBody([
-      kExprGetGlobal, g])
+      kExprGlobalGet, g])
     .exportAs("main");
 
   let module = new WebAssembly.Module(builder.toBuffer());
@@ -94,45 +91,37 @@ TestImported(kWasmF64, 77777.88888, 77777.88888);
 function TestExported(type, val, expected) {
   print("TestExported " + type + "(" + val +")" + " = " + expected);
   var builder = new WasmModuleBuilder();
-  var sig = makeSig([type], []);
-  builder.addGlobal(kWasmI32);  // pad
-  var g = builder.addGlobal(type, false)
-      .exportAs("foo");
-  g.init = val;
-  builder.addGlobal(kWasmI32);  // pad
+  builder.addGlobal(kWasmI32, false, false);  // pad
+  builder.addGlobal(type, false, false, val).exportAs("foo");
+  builder.addGlobal(kWasmI32, false, false);  // pad
 
   var instance = builder.instantiate();
   assertEquals(expected, instance.exports.foo.value);
 }
 
-TestExported(kWasmI32, 455.5, 455);
-TestExported(kWasmF32, -999.34343, Math.fround(-999.34343));
-TestExported(kWasmF64, 87347.66666, 87347.66666);
+TestExported(kWasmI32, wasmI32Const(455.5), 455);
+TestExported(kWasmF32, wasmF32Const(-999.34343),
+             Math.fround(-999.34343));
+TestExported(kWasmF64, wasmF64Const(87347.66666), 87347.66666);
 
 (function TestI64Exported() {
   var builder = new WasmModuleBuilder();
-  var sig = makeSig([kWasmI64], []);
-  builder.addGlobal(kWasmI32);  // pad
-  var g = builder.addGlobal(kWasmI64, false)
-      .exportAs("foo");
-  g.init = 1234;
-  builder.addGlobal(kWasmI32);  // pad
+  builder.addGlobal(kWasmI32, false, false);  // pad
+  builder.addGlobal(kWasmI64, false, false, wasmI64Const(1234)).exportAs("foo");
+  builder.addGlobal(kWasmI32, false, false);  // pad
 
   var instance = builder.instantiate();
   assertTrue(instance.exports.foo instanceof WebAssembly.Global);
-  assertThrows(() => {instance.exports.foo.value}, TypeError);
+  assertEquals(instance.exports.foo.value, 1234n);
 })();
 
 function TestImportedExported(type, val, expected) {
-  print("TestImportedExported " + type + "(" + val +")" + " = " + expected);
+  print("TestImportedExported " + type + "(" + val + ")" + " = " + expected);
   var builder = new WasmModuleBuilder();
-  var sig = makeSig([type], []);
   var i = builder.addImportedGlobal("ttt", "foo", type);
-  builder.addGlobal(kWasmI32);  // pad
-  var o = builder.addGlobal(type, false)
-      .exportAs("bar");
-  o.init_index = i;
-  builder.addGlobal(kWasmI32);  // pad
+  builder.addGlobal(kWasmI32, false, false);  // pad
+  builder.addGlobal(type, false, false, [kExprGlobalGet, i]).exportAs("bar");
+  builder.addGlobal(kWasmI32, false, false);  // pad
 
   var instance = builder.instantiate({ttt: {foo: val}});
   assertEquals(expected, instance.exports.bar.value);
@@ -147,13 +136,12 @@ function TestGlobalIndexSpace(type, val) {
   var builder = new WasmModuleBuilder();
   var im = builder.addImportedGlobal("nnn", "foo", type);
   assertEquals(0, im);
-  var def = builder.addGlobal(type, false);
+  var def = builder.addGlobal(type, false, false, [kExprGlobalGet, im]);
   assertEquals(1, def.index);
-  def.init_index = im;
 
   var sig = makeSig([], [type]);
   builder.addFunction("main", sig)
-    .addBody([kExprGetGlobal, def.index])
+    .addBody([kExprGlobalGet, def.index])
     .exportAs("main");
 
   var instance = builder.instantiate({nnn: {foo: val}});
@@ -169,27 +157,27 @@ TestGlobalIndexSpace(kWasmF64, 12345.678);
 
   var builder = new WasmModuleBuilder();
 
-  let g = builder.addGlobal(kWasmI32, true);
-  let h = builder.addGlobal(kWasmI32, true);
+  let g = builder.addGlobal(kWasmI32, true, false);
+  let h = builder.addGlobal(kWasmI32, true, false);
   let sig_index = builder.addType(kSig_i_i);
   builder.addFunction("get", sig_index)
     .addBody([
-      kExprGetLocal, 0,
+      kExprLocalGet, 0,
       kExprIf, kWasmI32,
-      kExprGetGlobal, g.index,
+      kExprGlobalGet, g.index,
       kExprElse,
-      kExprGetGlobal, h.index,
+      kExprGlobalGet, h.index,
       kExprEnd])
     .exportAs("get");
   builder.addFunction("set", kSig_v_ii)
     .addBody([
-      kExprGetLocal, 0,
-      kExprIf, kWasmStmt,
-      kExprGetLocal, 1,
-      kExprSetGlobal, g.index,
+      kExprLocalGet, 0,
+      kExprIf, kWasmVoid,
+      kExprLocalGet, 1,
+      kExprGlobalSet, g.index,
       kExprElse,
-      kExprGetLocal, 1,
-      kExprSetGlobal, h.index,
+      kExprLocalGet, 1,
+      kExprGlobalSet, h.index,
       kExprEnd])
     .exportAs("set");
 
@@ -213,4 +201,21 @@ TestGlobalIndexSpace(kWasmF64, 12345.678);
   assertEquals(7, get(0));
   assertEquals(9, get(1));
 
+})();
+
+(function testAssignUndefinedToGlobal() {
+  print(arguments.callee.name);
+  let i32_global = new WebAssembly.Global({mutable: true, value: 'i32'});
+  i32_global.value = undefined;
+  assertSame(0, i32_global.value);
+  let i64_global = new WebAssembly.Global({mutable: true, value: 'i64'});
+  assertThrows(() => {
+    i64_global.value = undefined;
+  }, TypeError);
+  let f32_global = new WebAssembly.Global({mutable: true, value: 'f32'});
+  f32_global.value = undefined;
+  assertSame(NaN, f32_global.value);
+  let f64_global = new WebAssembly.Global({mutable: true, value: 'f64'});
+  f64_global.value = undefined;
+  assertSame(NaN, f64_global.value);
 })();

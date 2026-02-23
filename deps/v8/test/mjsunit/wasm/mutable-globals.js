@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-mut-global
-
 function assertGlobalIsValid(global) {
   assertSame(WebAssembly.Global.prototype, global.__proto__);
   assertSame(WebAssembly.Global, global.constructor);
@@ -22,14 +20,14 @@ function assertGlobalIsValid(global) {
 
   assertThrows(() => new WebAssembly.Global({}), TypeError);
   assertThrows(() => new WebAssembly.Global({value: 'foo'}), TypeError);
-  assertThrows(() => new WebAssembly.Global({value: 'i64'}), TypeError);
+  assertThrows(() => new WebAssembly.Global({value: 'i128'}), TypeError);
 
-  for (let type of ['i32', 'f32', 'f64']) {
+  for (let type of ['i32', 'f32', 'f64', 'i64', 'externref', 'anyfunc']) {
     assertGlobalIsValid(new WebAssembly.Global({value: type}));
   }
 })();
 
-// Copied from //src/v8/test/cctest/compiler/value-helper.h
+// Copied from //src/v8/test/common/value-helper.h
 const u32_values = [
   0x00000000, 0x00000001, 0xFFFFFFFF, 0x1B09788B, 0x04C5FCE8, 0xCC0DE5BF,
   // This row is useful for testing lea optimizations on intel.
@@ -220,7 +218,7 @@ function GlobalI32(value, mutable = false) {
 
 function GlobalI64(mutable = false) {
   let builder = new WasmModuleBuilder();
-  builder.addGlobal(kWasm64, mutable).exportAs('i64');
+  builder.addGlobal(kWasm64, mutable, false).exportAs('i64');
   let module = new WebAssembly.Module(builder.toBuffer());
   let instance = new WebAssembly.Instance(module);
   return instance.exports.i64;

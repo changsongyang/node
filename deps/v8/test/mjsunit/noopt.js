@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --noopt --no-always-opt
+// Flags: --allow-natives-syntax --noturbofan
 
 
-// Check that --noopt actually works.
+// Check that --noturbofan actually works.
 
-function f() { return 42; }
-
+function f() {
+  return 42;
+};
+%PrepareFunctionForOptimization(f);
 f();
 f();
 %OptimizeFunctionOnNextCall(f);

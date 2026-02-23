@@ -258,11 +258,11 @@ inline uint32_t maybeFilterValue(uint32_t value, uint32_t trieNullValue, uint32_
 
 UChar32 getRange(const void *t, UChar32 start,
                  UCPMapValueFilter *filter, const void *context, uint32_t *pValue) {
-    if ((uint32_t)start > MAX_UNICODE) {
+    if (static_cast<uint32_t>(start) > MAX_UNICODE) {
         return U_SENTINEL;
     }
     const UCPTrie *trie = reinterpret_cast<const UCPTrie *>(t);
-    UCPTrieValueWidth valueWidth = (UCPTrieValueWidth)trie->valueWidth;
+    UCPTrieValueWidth valueWidth = static_cast<UCPTrieValueWidth>(trie->valueWidth);
     if (start >= trie->highStart) {
         if (pValue != nullptr) {
             int32_t di = trie->dataLength - UCPTRIE_HIGH_VALUE_NEG_DATA_OFFSET;
@@ -280,7 +280,7 @@ UChar32 getRange(const void *t, UChar32 start,
     int32_t prevI3Block = -1;
     int32_t prevBlock = -1;
     UChar32 c = start;
-    uint32_t value;
+    uint32_t trieValue, value = nullValue;
     bool haveValue = false;
     do {
         int32_t i3Block;
@@ -304,7 +304,7 @@ UChar32 getRange(const void *t, UChar32 start,
                 i1 += UCPTRIE_SMALL_INDEX_LENGTH;
             }
             i3Block = trie->index[
-                (int32_t)trie->index[i1] + ((c >> UCPTRIE_SHIFT_2) & UCPTRIE_INDEX_2_MASK)];
+                static_cast<int32_t>(trie->index[i1]) + ((c >> UCPTRIE_SHIFT_2) & UCPTRIE_INDEX_2_MASK)];
             if (i3Block == prevI3Block && (c - start) >= UCPTRIE_CP_PER_INDEX_2_ENTRY) {
                 // The index-3 block is the same as the previous one, and filled with value.
                 U_ASSERT((c & (UCPTRIE_CP_PER_INDEX_2_ENTRY - 1)) == 0);
@@ -319,6 +319,7 @@ UChar32 getRange(const void *t, UChar32 start,
                         return c - 1;
                     }
                 } else {
+                    trieValue = trie->nullValue;
                     value = nullValue;
                     if (pValue != nullptr) { *pValue = nullValue; }
                     haveValue = true;
@@ -340,7 +341,7 @@ UChar32 getRange(const void *t, UChar32 start,
                 // 18-bit indexes stored in groups of 9 entries per 8 indexes.
                 int32_t group = (i3Block & 0x7fff) + (i3 & ~7) + (i3 >> 3);
                 int32_t gi = i3 & 7;
-                block = ((int32_t)index[group++] << (2 + (2 * gi))) & 0x30000;
+                block = (static_cast<int32_t>(index[group++]) << (2 + (2 * gi))) & 0x30000;
                 block |= index[group + gi];
             }
             if (block == prevBlock && (c - start) >= dataBlockLength) {
@@ -357,6 +358,7 @@ UChar32 getRange(const void *t, UChar32 start,
                             return c - 1;
                         }
                     } else {
+                        trieValue = trie->nullValue;
                         value = nullValue;
                         if (pValue != nullptr) { *pValue = nullValue; }
                         haveValue = true;
@@ -364,23 +366,32 @@ UChar32 getRange(const void *t, UChar32 start,
                     c = (c + dataBlockLength) & ~dataMask;
                 } else {
                     int32_t di = block + (c & dataMask);
-                    uint32_t value2 = getValue(trie->data, valueWidth, di);
-                    value2 = maybeFilterValue(value2, trie->nullValue, nullValue,
-                                              filter, context);
+                    uint32_t trieValue2 = getValue(trie->data, valueWidth, di);
                     if (haveValue) {
-                        if (value2 != value) {
-                            return c - 1;
+                        if (trieValue2 != trieValue) {
+                            if (filter == nullptr ||
+                                    maybeFilterValue(trieValue2, trie->nullValue, nullValue,
+                                                     filter, context) != value) {
+                                return c - 1;
+                            }
+                            trieValue = trieValue2;  // may or may not help
                         }
                     } else {
-                        value = value2;
+                        trieValue = trieValue2;
+                        value = maybeFilterValue(trieValue2, trie->nullValue, nullValue,
+                                                 filter, context);
                         if (pValue != nullptr) { *pValue = value; }
                         haveValue = true;
                     }
                     while ((++c & dataMask) != 0) {
-                        if (maybeFilterValue(getValue(trie->data, valueWidth, ++di),
-                                             trie->nullValue, nullValue,
-                                             filter, context) != value) {
-                            return c - 1;
+                        trieValue2 = getValue(trie->data, valueWidth, ++di);
+                        if (trieValue2 != trieValue) {
+                            if (filter == nullptr ||
+                                    maybeFilterValue(trieValue2, trie->nullValue, nullValue,
+                                                     filter, context) != value) {
+                                return c - 1;
+                            }
+                            trieValue = trieValue2;  // may or may not help
                         }
                     }
                 }

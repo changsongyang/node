@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 //
 // Flags: --mark-shared-functions-for-tier-up --allow-natives-syntax
-// Flags: --opt --no-always-opt --turbo-filter=*
+// Flags: --turbofan --turbo-filter=*
 
 // If we are always or never optimizing it is useless.
-assertFalse(isAlwaysOptimize());
+if (isNeverOptimizeLiteMode()) {
+  print("Warning: skipping test that requires optimization in Lite mode.");
+  quit(0);
+}
 assertFalse(isNeverOptimize());
 
 (function() {
@@ -15,18 +18,19 @@ assertFalse(isNeverOptimize());
   for (var i = 0; i < 3; ++i) {
     var f = function(x) {
       return 2 * x;
-    }
+    };
+    %PrepareFunctionForOptimization(f);
     sum += f(i);
 
     if (i == 1) {
       // f must be interpreted code.
-      assertTrue(isInterpreted(f));
+      assertUnoptimized(f);
 
       // Run twice (i = 0, 1), then tier-up.
       %OptimizeFunctionOnNextCall(f);
     } else if (i == 2) {
       // Tier-up at i = 2 should go up to turbofan.
-      assertTrue(isTurboFanned(f));
+      assertOptimized(f);
     }
   }
 })()

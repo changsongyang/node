@@ -5,51 +5,112 @@
 #ifndef V8_OBJECTS_LITERAL_OBJECTS_INL_H_
 #define V8_OBJECTS_LITERAL_OBJECTS_INL_H_
 
-#include "src/objects-inl.h"
 #include "src/objects/literal-objects.h"
+// Include the non-inl header before the rest of the headers.
+
+#include <optional>
+
+#include "src/objects/objects-inl.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
-namespace v8 {
-namespace internal {
+namespace v8::internal {
 
-SMI_ACCESSORS(ObjectBoilerplateDescription, flags,
-              FixedArray::OffsetOfElementAt(kLiteralTypeOffset));
+#include "torque-generated/src/objects/literal-objects-tq-inl.inc"
 
-CAST_ACCESSOR(ClassBoilerplate)
+//
+// ObjectBoilerplateDescription
+//
 
-BIT_FIELD_ACCESSORS(ClassBoilerplate, flags, install_class_name_accessor,
-                    ClassBoilerplate::Flags::InstallClassNameAccessorBit)
+// static
+template <class IsolateT>
+Handle<ObjectBoilerplateDescription> ObjectBoilerplateDescription::New(
+    IsolateT* isolate, int boilerplate, int all_properties, int index_keys,
+    bool has_seen_proto, AllocationType allocation) {
+  DCHECK_GE(boilerplate, 0);
+  DCHECK_GE(all_properties, index_keys);
+  DCHECK_GE(index_keys, 0);
 
-BIT_FIELD_ACCESSORS(ClassBoilerplate, flags, arguments_count,
-                    ClassBoilerplate::Flags::ArgumentsCountBits)
+  int capacity = boilerplate * kElementsPerEntry;
+  CHECK_LE(static_cast<unsigned>(capacity), kMaxCapacity);
 
-SMI_ACCESSORS(ClassBoilerplate, flags,
-              FixedArray::OffsetOfElementAt(kFlagsIndex));
+  int backing_store_size =
+      all_properties - index_keys - (has_seen_proto ? 1 : 0);
+  DCHECK_GE(backing_store_size, 0);
 
-ACCESSORS(ClassBoilerplate, static_properties_template, Object,
-          FixedArray::OffsetOfElementAt(kClassPropertiesTemplateIndex));
+  // Note we explicitly do NOT canonicalize to the
+  // empty_object_boilerplate_description here since `flags` may be modified
+  // even on empty descriptions.
 
-ACCESSORS(ClassBoilerplate, static_elements_template, Object,
-          FixedArray::OffsetOfElementAt(kClassElementsTemplateIndex));
+  std::optional<DisallowGarbageCollection> no_gc;
+  auto result = Cast<ObjectBoilerplateDescription>(
+      Allocate(isolate, capacity, &no_gc, allocation));
+  result->set_flags(0);
+  result->set_backing_store_size(backing_store_size);
+  MemsetTagged((*result)->RawFieldOfFirstElement(),
+               ReadOnlyRoots{isolate}.undefined_value(), capacity);
+  return result;
+}
 
-ACCESSORS(ClassBoilerplate, static_computed_properties, FixedArray,
-          FixedArray::OffsetOfElementAt(kClassComputedPropertiesIndex));
+int ObjectBoilerplateDescription::backing_store_size() const {
+  return backing_store_size_.load().value();
+}
+void ObjectBoilerplateDescription::set_backing_store_size(int value) {
+  backing_store_size_.store(this, Smi::FromInt(value));
+}
+int ObjectBoilerplateDescription::flags() const {
+  return flags_.load().value();
+}
+void ObjectBoilerplateDescription::set_flags(int value) {
+  flags_.store(this, Smi::FromInt(value));
+}
 
-ACCESSORS(ClassBoilerplate, instance_properties_template, Object,
-          FixedArray::OffsetOfElementAt(kPrototypePropertiesTemplateIndex));
+Tagged<Object> ObjectBoilerplateDescription::name(int index) const {
+  return get(NameIndex(index));
+}
 
-ACCESSORS(ClassBoilerplate, instance_elements_template, Object,
-          FixedArray::OffsetOfElementAt(kPrototypeElementsTemplateIndex));
+Tagged<Object> ObjectBoilerplateDescription::value(int index) const {
+  return get(ValueIndex(index));
+}
 
-ACCESSORS(ClassBoilerplate, instance_computed_properties, FixedArray,
-          FixedArray::OffsetOfElementAt(kPrototypeComputedPropertiesIndex));
+void ObjectBoilerplateDescription::set_key_value(int index, Tagged<Object> key,
+                                                 Tagged<Object> value) {
+  DCHECK_LT(static_cast<unsigned>(index), boilerplate_properties_count());
+  set(NameIndex(index), key);
+  set(ValueIndex(index), value);
+}
 
-SMI_ACCESSORS(ArrayBoilerplateDescription, flags, kFlagsOffset);
+int ObjectBoilerplateDescription::boilerplate_properties_count() const {
+  DCHECK_EQ(0, capacity() % kElementsPerEntry);
+  return capacity() / kElementsPerEntry;
+}
 
-ACCESSORS(ArrayBoilerplateDescription, constant_elements, FixedArrayBase,
-          kConstantElementsOffset);
+//
+// ClassBoilerplate
+//
+
+OBJECT_CONSTRUCTORS_IMPL(ClassBoilerplate, Struct)
+
+SMI_ACCESSORS(ClassBoilerplate, arguments_count, kArgumentsCountOffset)
+ACCESSORS(ClassBoilerplate, static_properties_template, Tagged<Object>,
+          kStaticPropertiesTemplateOffset)
+ACCESSORS(ClassBoilerplate, static_elements_template, Tagged<Object>,
+          kStaticElementsTemplateOffset)
+ACCESSORS(ClassBoilerplate, static_computed_properties, Tagged<FixedArray>,
+          kStaticComputedPropertiesOffset)
+ACCESSORS(ClassBoilerplate, instance_properties_template, Tagged<Object>,
+          kInstancePropertiesTemplateOffset)
+ACCESSORS(ClassBoilerplate, instance_elements_template, Tagged<Object>,
+          kInstanceElementsTemplateOffset)
+ACCESSORS(ClassBoilerplate, instance_computed_properties, Tagged<FixedArray>,
+          kInstanceComputedPropertiesOffset)
+
+//
+// ArrayBoilerplateDescription
+//
+
+TQ_OBJECT_CONSTRUCTORS_IMPL(ArrayBoilerplateDescription)
 
 ElementsKind ArrayBoilerplateDescription::elements_kind() const {
   return static_cast<ElementsKind>(flags());
@@ -63,8 +124,17 @@ bool ArrayBoilerplateDescription::is_empty() const {
   return constant_elements()->length() == 0;
 }
 
-}  // namespace internal
-}  // namespace v8
+//
+// RegExpBoilerplateDescription
+//
+
+OBJECT_CONSTRUCTORS_IMPL(RegExpBoilerplateDescription, Struct)
+TRUSTED_POINTER_ACCESSORS(RegExpBoilerplateDescription, data, RegExpData,
+                          kDataOffset, kRegExpDataIndirectPointerTag)
+ACCESSORS(RegExpBoilerplateDescription, source, Tagged<String>, kSourceOffset)
+SMI_ACCESSORS(RegExpBoilerplateDescription, flags, kFlagsOffset)
+
+}  // namespace v8::internal
 
 #include "src/objects/object-macros-undef.h"
 

@@ -5,17 +5,18 @@
 // PLEASE READ BEFORE CHANGING THIS FILE!
 //
 // This file contains code that is used both inside and outside the out of
-// bounds signal handler. Because this code runs in a signal handler context,
+// bounds trap handler. Because this code runs in a trap handler context,
 // use extra care when modifying this file. Here are some rules to follow.
 //
 // 1. Do not introduce any new external dependencies. This file needs
 //    to be self contained so it is easy to audit everything that a
-//    signal handler might do.
+//    trap handler might do.
 //
 // 2. Any changes must be reviewed by someone from the crash reporting
 //    or security team. See OWNERS for suggested reviewers.
 //
-// For more information, see https://goo.gl/yMeyUY.
+// For more information, see:
+// https://docs.google.com/document/d/17y4kxuHFrVxAiuCP_FFtFA2HP5sNPsCD10KEx17Hz6M
 
 #include "src/trap-handler/trap-handler-internal.h"
 
@@ -23,51 +24,53 @@ namespace v8 {
 namespace internal {
 namespace trap_handler {
 
-// We declare this as int rather than bool as a workaround for a glibc bug, in
-// which the dynamic loader cannot handle executables whose TLS area is only
-// 1 byte in size; see https://sourceware.org/bugzilla/show_bug.cgi?id=14898.
-THREAD_LOCAL int g_thread_in_wasm_code;
-
-#if V8_TRAP_HANDLER_SUPPORTED
-// When using the default signal handler, we save the old one to restore in case
-// V8 chooses not to handle the signal.
-struct sigaction g_old_handler;
-bool g_is_default_signal_handler_registered;
-#endif
-
-V8_EXPORT_PRIVATE void RestoreOriginalSignalHandler() {
-#if V8_TRAP_HANDLER_SUPPORTED
-  if (sigaction(SIGSEGV, &g_old_handler, nullptr) == 0) {
-    g_is_default_signal_handler_registered = false;
-  }
-#endif
-}
-
-static_assert(sizeof(g_thread_in_wasm_code) > 1,
-              "sizeof(thread_local_var) must be > 1, see "
-              "https://sourceware.org/bugzilla/show_bug.cgi?id=14898");
+thread_local bool TrapHandlerGuard::is_active_ = 0;
 
 size_t gNumCodeObjects = 0;
 CodeProtectionInfoListEntry* gCodeObjects = nullptr;
+SandboxRecord* gSandboxRecordsHead = nullptr;
 std::atomic_size_t gRecoveredTrapCount = {0};
+std::atomic<uintptr_t> gLandingPad = {0};
 
+#if !defined(__cpp_lib_atomic_value_initialization) || \
+    __cpp_lib_atomic_value_initialization < 201911L
 std::atomic_flag MetadataLock::spinlock_ = ATOMIC_FLAG_INIT;
+std::atomic_flag SandboxRecordsLock::spinlock_ = ATOMIC_FLAG_INIT;
+#else
+std::atomic_flag MetadataLock::spinlock_;
+std::atomic_flag SandboxRecordsLock::spinlock_;
+#endif
 
 MetadataLock::MetadataLock() {
-  if (g_thread_in_wasm_code) {
-    abort();
-  }
+  // This lock is taken from inside the trap handler. As such, we must only
+  // take this lock if the trap handler guard is active on this thread. This
+  // way, we avoid a deadlock in case we cause a fault while holding the lock.
+  TH_CHECK(TrapHandlerGuard::IsActiveOnCurrentThread());
 
-  while (spinlock_.test_and_set(std::memory_order::memory_order_acquire)) {
+  while (spinlock_.test_and_set(std::memory_order_acquire)) {
   }
 }
 
 MetadataLock::~MetadataLock() {
-  if (g_thread_in_wasm_code) {
-    abort();
-  }
+  TH_CHECK(TrapHandlerGuard::IsActiveOnCurrentThread());
 
-  spinlock_.clear(std::memory_order::memory_order_release);
+  spinlock_.clear(std::memory_order_release);
+}
+
+SandboxRecordsLock::SandboxRecordsLock() {
+  // This lock is taken from inside the trap handler. As such, we must only
+  // take this lock if the trap handler guard is active on this thread. This
+  // way, we avoid a deadlock in case we cause a fault while holding the lock.
+  TH_CHECK(TrapHandlerGuard::IsActiveOnCurrentThread());
+
+  while (spinlock_.test_and_set(std::memory_order_acquire)) {
+  }
+}
+
+SandboxRecordsLock::~SandboxRecordsLock() {
+  TH_CHECK(TrapHandlerGuard::IsActiveOnCurrentThread());
+
+  spinlock_.clear(std::memory_order_release);
 }
 
 }  // namespace trap_handler

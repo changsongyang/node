@@ -3,21 +3,23 @@
 // found in the LICENSE file.
 
 // Flags: --wasm-max-mem-pages=49152
+// Save some memory on Linux; other platforms ignore this flag.
+// Flags: --multi-mapped-mock-allocator
 
 // This test makes sure things don't break once we support >2GB wasm memories.
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
-function testHugeMemory() {
+(function testHugeMemory() {
+  print(arguments.callee.name);
   var builder = new WasmModuleBuilder();
 
   const num_pages = 49152;  // 3GB
 
-  builder.addMemory(num_pages, num_pages, true);
+  builder.addMemory(num_pages, num_pages);
   builder.addFunction("geti", kSig_i_ii)
     .addBody([
-      kExprGetLocal, 0,
-      kExprGetLocal, 1,
+      kExprLocalGet, 0,
+      kExprLocalGet, 1,
       kExprI32Mul,
       kExprI32LoadMem, 0, 0,
     ])
@@ -30,15 +32,15 @@ function testHugeMemory() {
   assertEquals(0, geti(2500, 1 << 20));
   print("Out of bounds");
   assertTraps(kTrapMemOutOfBounds, () => geti(3500, 1 << 20));
-}
-testHugeMemory();
+})();
 
-function testHugeMemoryConstInBounds() {
+(function testHugeMemoryConstInBounds() {
+  print(arguments.callee.name);
   var builder = new WasmModuleBuilder();
 
   const num_pages = 49152;  // 3GB
 
-  builder.addMemory(num_pages, num_pages, true);
+  builder.addMemory(num_pages, num_pages);
   builder.addFunction("geti", kSig_i_v)
     .addBody([
       kExprI32Const, 0x80, 0x80, 0x80, 0x80, 0x7A, // 0xA0000000, 2.5GB
@@ -51,15 +53,15 @@ function testHugeMemoryConstInBounds() {
 
   print("In bounds");
   assertEquals(0, geti());
-}
-testHugeMemoryConstInBounds();
+})();
 
-function testHugeMemoryConstOutOfBounds() {
+(function testHugeMemoryConstOutOfBounds() {
+  print(arguments.callee.name);
   var builder = new WasmModuleBuilder();
 
   const num_pages = 49152;  // 3GB
 
-  builder.addMemory(num_pages, num_pages, true);
+  builder.addMemory(num_pages, num_pages);
   builder.addFunction("geti", kSig_i_v)
     .addBody([
       kExprI32Const, 0x80, 0x80, 0x80, 0x80, 0x7E, // 0xE0000000, 3.5GB
@@ -72,5 +74,11 @@ function testHugeMemoryConstOutOfBounds() {
 
   print("Out of bounds");
   assertTraps(kTrapMemOutOfBounds, geti);
-}
-testHugeMemoryConstOutOfBounds();
+})();
+
+(function testGrowHugeMemory() {
+  print(arguments.callee.name);
+
+  let mem = new WebAssembly.Memory({initial: 1});
+  mem.grow(49151);
+})();

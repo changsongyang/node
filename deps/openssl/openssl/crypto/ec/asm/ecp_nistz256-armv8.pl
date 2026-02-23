@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-# Copyright 2015-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2015-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -22,25 +22,27 @@
 # http://eprint.iacr.org/2013/816.
 #
 #			with/without -DECP_NISTZ256_ASM
-# Apple A7		+120-360%
-# Cortex-A53		+120-400%
-# Cortex-A57		+120-350%
-# X-Gene		+200-330%
-# Denver		+140-400%
+# Apple A7		+190-360%
+# Cortex-A53		+190-400%
+# Cortex-A57		+190-350%
+# Denver		+230-400%
 #
 # Ranges denote minimum and maximum improvement coefficients depending
 # on benchmark. Lower coefficients are for ECDSA sign, server-side
 # operation. Keep in mind that +400% means 5x improvement.
 
-$flavour = shift;
-while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 ( $xlate="${dir}arm-xlate.pl" and -f $xlate ) or
 ( $xlate="${dir}../../perlasm/arm-xlate.pl" and -f $xlate) or
 die "can't locate arm-xlate.pl";
 
-open OUT,"| \"$^X\" $xlate $flavour $output";
+open OUT,"| \"$^X\" $xlate $flavour \"$output\""
+    or die "can't call $xlate: $!";
 *STDOUT=*OUT;
 
 {
@@ -53,7 +55,7 @@ my ($acc6,$acc7)=($ap,$bp);	# used in __ecp_nistz256_sqr_mont
 $code.=<<___;
 #include "arm_arch.h"
 
-.text
+.rodata
 ___
 ########################################################################
 # Convert ecp_nistz256_table.c to layout expected by ecp_nistz_gather_w7
@@ -109,28 +111,40 @@ $code.=<<___;
 .quad	0x0000000000000001,0xffffffff00000000,0xffffffffffffffff,0x00000000fffffffe
 .Lone:
 .quad	1,0,0,0
+.Lord:
+.quad	0xf3b9cac2fc632551,0xbce6faada7179e84,0xffffffffffffffff,0xffffffff00000000
+.LordK:
+.quad	0xccd1c8aaee00bc4f
 .asciz	"ECP_NISTZ256 for ARMv8, CRYPTOGAMS by <appro\@openssl.org>"
+
+.text
 
 // void	ecp_nistz256_to_mont(BN_ULONG x0[4],const BN_ULONG x1[4]);
 .globl	ecp_nistz256_to_mont
 .type	ecp_nistz256_to_mont,%function
 .align	6
 ecp_nistz256_to_mont:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
 
-	ldr	$bi,.LRR		// bp[0]
+	adrp	$bi,.LRR
+	ldr	$bi,[$bi,:lo12:.LRR]	// bp[0]
 	ldp	$a0,$a1,[$ap]
 	ldp	$a2,$a3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
-	adr	$bp,.LRR		// &bp[0]
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
+	adrp	$bp,.LRR		// &bp[0]
+	add	$bp,$bp,:lo12:.LRR
 
 	bl	__ecp_nistz256_mul_mont
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_to_mont,.-ecp_nistz256_to_mont
 
@@ -139,6 +153,7 @@ ecp_nistz256_to_mont:
 .type	ecp_nistz256_from_mont,%function
 .align	4
 ecp_nistz256_from_mont:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -146,14 +161,18 @@ ecp_nistz256_from_mont:
 	mov	$bi,#1			// bp[0]
 	ldp	$a0,$a1,[$ap]
 	ldp	$a2,$a3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
-	adr	$bp,.Lone		// &bp[0]
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
+	adrp	$bp,.Lone		// &bp[0]
+	add	$bp,$bp,:lo12:.Lone
 
 	bl	__ecp_nistz256_mul_mont
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_from_mont,.-ecp_nistz256_from_mont
 
@@ -163,6 +182,7 @@ ecp_nistz256_from_mont:
 .type	ecp_nistz256_mul_mont,%function
 .align	4
 ecp_nistz256_mul_mont:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -170,13 +190,16 @@ ecp_nistz256_mul_mont:
 	ldr	$bi,[$bp]		// bp[0]
 	ldp	$a0,$a1,[$ap]
 	ldp	$a2,$a3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_mul_mont
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_mul_mont,.-ecp_nistz256_mul_mont
 
@@ -185,19 +208,23 @@ ecp_nistz256_mul_mont:
 .type	ecp_nistz256_sqr_mont,%function
 .align	4
 ecp_nistz256_sqr_mont:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
 
 	ldp	$a0,$a1,[$ap]
 	ldp	$a2,$a3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_sqr_mont
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_sqr_mont,.-ecp_nistz256_sqr_mont
 
@@ -207,6 +234,7 @@ ecp_nistz256_sqr_mont:
 .type	ecp_nistz256_add,%function
 .align	4
 ecp_nistz256_add:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -214,12 +242,15 @@ ecp_nistz256_add:
 	ldp	$t0,$t1,[$bp]
 	ldp	$acc2,$acc3,[$ap,#16]
 	ldp	$t2,$t3,[$bp,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_add
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_add,.-ecp_nistz256_add
 
@@ -228,17 +259,21 @@ ecp_nistz256_add:
 .type	ecp_nistz256_div_by_2,%function
 .align	4
 ecp_nistz256_div_by_2:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
 	ldp	$acc0,$acc1,[$ap]
 	ldp	$acc2,$acc3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_div_by_2
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_div_by_2,.-ecp_nistz256_div_by_2
 
@@ -247,13 +282,16 @@ ecp_nistz256_div_by_2:
 .type	ecp_nistz256_mul_by_2,%function
 .align	4
 ecp_nistz256_mul_by_2:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
 	ldp	$acc0,$acc1,[$ap]
 	ldp	$acc2,$acc3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 	mov	$t0,$acc0
 	mov	$t1,$acc1
 	mov	$t2,$acc2
@@ -262,6 +300,7 @@ ecp_nistz256_mul_by_2:
 	bl	__ecp_nistz256_add	// ret = a+a	// 2*a
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_mul_by_2,.-ecp_nistz256_mul_by_2
 
@@ -270,13 +309,16 @@ ecp_nistz256_mul_by_2:
 .type	ecp_nistz256_mul_by_3,%function
 .align	4
 ecp_nistz256_mul_by_3:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
 	ldp	$acc0,$acc1,[$ap]
 	ldp	$acc2,$acc3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 	mov	$t0,$acc0
 	mov	$t1,$acc1
 	mov	$t2,$acc2
@@ -296,6 +338,7 @@ ecp_nistz256_mul_by_3:
 	bl	__ecp_nistz256_add	// ret += a	// 2*a+a=3*a
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_mul_by_3,.-ecp_nistz256_mul_by_3
 
@@ -305,17 +348,21 @@ ecp_nistz256_mul_by_3:
 .type	ecp_nistz256_sub,%function
 .align	4
 ecp_nistz256_sub:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
 	ldp	$acc0,$acc1,[$ap]
 	ldp	$acc2,$acc3,[$ap,#16]
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_sub_from
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_sub,.-ecp_nistz256_sub
 
@@ -324,6 +371,7 @@ ecp_nistz256_sub:
 .type	ecp_nistz256_neg,%function
 .align	4
 ecp_nistz256_neg:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -332,12 +380,15 @@ ecp_nistz256_neg:
 	mov	$acc1,xzr
 	mov	$acc2,xzr
 	mov	$acc3,xzr
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	bl	__ecp_nistz256_sub_from
 
 	ldp	x29,x30,[sp],#16
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_neg,.-ecp_nistz256_neg
 
@@ -660,7 +711,7 @@ __ecp_nistz256_div_by_2:
 	adc	$ap,xzr,xzr		// zap $ap
 	tst	$acc0,#1		// is a even?
 
-	csel	$acc0,$acc0,$t0,eq	// ret = even ? a : a+modulus 
+	csel	$acc0,$acc0,$t0,eq	// ret = even ? a : a+modulus
 	csel	$acc1,$acc1,$t1,eq
 	csel	$acc2,$acc2,$t2,eq
 	csel	$acc3,$acc3,$t3,eq
@@ -698,7 +749,8 @@ $code.=<<___;
 .type	ecp_nistz256_point_double,%function
 .align	5
 ecp_nistz256_point_double:
-	stp	x29,x30,[sp,#-80]!
+	AARCH64_SIGN_LINK_REGISTER
+	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
 	stp	x21,x22,[sp,#32]
@@ -709,9 +761,11 @@ ecp_nistz256_point_double:
 	 mov	$rp_real,$rp
 	ldp	$acc2,$acc3,[$ap,#48]
 	 mov	$ap_real,$ap
-	 ldr	$poly1,.Lpoly+8
+	 adrp	$poly3,.Lpoly
+	 add	$poly3,$poly3,:lo12:.Lpoly
+	 ldr	$poly1,[$poly3,#8]
 	mov	$t0,$acc0
-	 ldr	$poly3,.Lpoly+24
+	 ldr	$poly3,[$poly3,#24]
 	mov	$t1,$acc1
 	 ldp	$a0,$a1,[$ap_real,#64]	// forward load for p256_sqr_mont
 	mov	$t2,$acc2
@@ -831,7 +885,8 @@ ecp_nistz256_point_double:
 	add	sp,x29,#0		// destroy frame
 	ldp	x19,x20,[x29,#16]
 	ldp	x21,x22,[x29,#32]
-	ldp	x29,x30,[sp],#80
+	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_point_double,.-ecp_nistz256_point_double
 ___
@@ -847,19 +902,21 @@ my ($res_x,$res_y,$res_z,
 my ($Z1sqr, $Z2sqr) = ($Hsqr, $Rsqr);
 # above map() describes stack layout with 12 temporary
 # 256-bit vectors on top.
-my ($rp_real,$ap_real,$bp_real,$in1infty,$in2infty,$temp)=map("x$_",(21..26));
+my ($rp_real,$ap_real,$bp_real,$in1infty,$in2infty,$temp0,$temp1,$temp2)=map("x$_",(21..28));
 
 $code.=<<___;
 .globl	ecp_nistz256_point_add
 .type	ecp_nistz256_point_add,%function
 .align	5
 ecp_nistz256_point_add:
-	stp	x29,x30,[sp,#-80]!
+	AARCH64_SIGN_LINK_REGISTER
+	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
 	stp	x21,x22,[sp,#32]
 	stp	x23,x24,[sp,#48]
 	stp	x25,x26,[sp,#64]
+	stp	x27,x28,[sp,#80]
 	sub	sp,sp,#32*12
 
 	ldp	$a0,$a1,[$bp,#64]	// in2_z
@@ -867,13 +924,15 @@ ecp_nistz256_point_add:
 	 mov	$rp_real,$rp
 	 mov	$ap_real,$ap
 	 mov	$bp_real,$bp
-	 ldr	$poly1,.Lpoly+8
-	 ldr	$poly3,.Lpoly+24
+	 adrp	$poly3,.Lpoly
+	 add	$poly3,$poly3,:lo12:.Lpoly
+	 ldr	$poly1,[$poly3,#8]
+	 ldr	$poly3,[$poly3,#24]
 	orr	$t0,$a0,$a1
 	orr	$t2,$a2,$a3
 	orr	$in2infty,$t0,$t2
 	cmp	$in2infty,#0
-	csetm	$in2infty,ne		// !in2infty
+	csetm	$in2infty,ne		// ~in2infty
 	add	$rp,sp,#$Z2sqr
 	bl	__ecp_nistz256_sqr_mont	// p256_sqr_mont(Z2sqr, in2_z);
 
@@ -883,7 +942,7 @@ ecp_nistz256_point_add:
 	orr	$t2,$a2,$a3
 	orr	$in1infty,$t0,$t2
 	cmp	$in1infty,#0
-	csetm	$in1infty,ne		// !in1infty
+	csetm	$in1infty,ne		// ~in1infty
 	add	$rp,sp,#$Z1sqr
 	bl	__ecp_nistz256_sqr_mont	// p256_sqr_mont(Z1sqr, in1_z);
 
@@ -924,7 +983,7 @@ ecp_nistz256_point_add:
 
 	orr	$acc0,$acc0,$acc1	// see if result is zero
 	orr	$acc2,$acc2,$acc3
-	orr	$temp,$acc0,$acc2
+	orr	$temp0,$acc0,$acc2	// ~is_equal(S1,S2)
 
 	add	$bp,sp,#$Z2sqr
 	add	$rp,sp,#$U1
@@ -945,32 +1004,21 @@ ecp_nistz256_point_add:
 
 	orr	$acc0,$acc0,$acc1	// see if result is zero
 	orr	$acc2,$acc2,$acc3
-	orr	$acc0,$acc0,$acc2
-	tst	$acc0,$acc0
-	b.ne	.Ladd_proceed		// is_equal(U1,U2)?
+	orr	$acc0,$acc0,$acc2	// ~is_equal(U1,U2)
 
-	tst	$in1infty,$in2infty
-	b.eq	.Ladd_proceed		// (in1infty || in2infty)?
+	mvn	$temp1,$in1infty	// -1/0 -> 0/-1
+	mvn	$temp2,$in2infty	// -1/0 -> 0/-1
+	orr	$acc0,$acc0,$temp1
+	orr	$acc0,$acc0,$temp2
+	orr	$acc0,$acc0,$temp0
+	cbnz	$acc0,.Ladd_proceed	// if(~is_equal(U1,U2) | in1infty | in2infty | ~is_equal(S1,S2))
 
-	tst	$temp,$temp
-	b.eq	.Ladd_double		// is_equal(S1,S2)?
-
-	eor	$a0,$a0,$a0
-	eor	$a1,$a1,$a1
-	stp	$a0,$a1,[$rp_real]
-	stp	$a0,$a1,[$rp_real,#16]
-	stp	$a0,$a1,[$rp_real,#32]
-	stp	$a0,$a1,[$rp_real,#48]
-	stp	$a0,$a1,[$rp_real,#64]
-	stp	$a0,$a1,[$rp_real,#80]
-	b	.Ladd_done
-
-.align	4
 .Ladd_double:
 	mov	$ap,$ap_real
 	mov	$rp,$rp_real
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
+	ldp	x27,x28,[x29,#80]
 	add	sp,sp,#32*(12-4)	// difference in stack frames
 	b	.Ldouble_shortcut
 
@@ -1055,14 +1103,14 @@ ___
 for($i=0;$i<64;$i+=32) {		# conditional moves
 $code.=<<___;
 	ldp	$acc0,$acc1,[$ap_real,#$i]	// in1
-	cmp	$in1infty,#0			// !$in1intfy, remember?
+	cmp	$in1infty,#0			// ~$in1intfy, remember?
 	ldp	$acc2,$acc3,[$ap_real,#$i+16]
 	csel	$t0,$a0,$t0,ne
 	csel	$t1,$a1,$t1,ne
 	ldp	$a0,$a1,[sp,#$res_x+$i+32]	// res
 	csel	$t2,$a2,$t2,ne
 	csel	$t3,$a3,$t3,ne
-	cmp	$in2infty,#0			// !$in2intfy, remember?
+	cmp	$in2infty,#0			// ~$in2intfy, remember?
 	ldp	$a2,$a3,[sp,#$res_x+$i+48]
 	csel	$acc0,$t0,$acc0,ne
 	csel	$acc1,$t1,$acc1,ne
@@ -1076,13 +1124,13 @@ ___
 }
 $code.=<<___;
 	ldp	$acc0,$acc1,[$ap_real,#$i]	// in1
-	cmp	$in1infty,#0			// !$in1intfy, remember?
+	cmp	$in1infty,#0			// ~$in1intfy, remember?
 	ldp	$acc2,$acc3,[$ap_real,#$i+16]
 	csel	$t0,$a0,$t0,ne
 	csel	$t1,$a1,$t1,ne
 	csel	$t2,$a2,$t2,ne
 	csel	$t3,$a3,$t3,ne
-	cmp	$in2infty,#0			// !$in2intfy, remember?
+	cmp	$in2infty,#0			// ~$in2intfy, remember?
 	csel	$acc0,$t0,$acc0,ne
 	csel	$acc1,$t1,$acc1,ne
 	csel	$acc2,$t2,$acc2,ne
@@ -1091,12 +1139,14 @@ $code.=<<___;
 	stp	$acc2,$acc3,[$rp_real,#$i+16]
 
 .Ladd_done:
-	add	sp,x29,#0	// destroy frame
+	add	sp,x29,#0		// destroy frame
 	ldp	x19,x20,[x29,#16]
 	ldp	x21,x22,[x29,#32]
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
-	ldp	x29,x30,[sp],#80
+	ldp	x27,x28,[x29,#80]
+	ldp	x29,x30,[sp],#96
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_point_add,.-ecp_nistz256_point_add
 ___
@@ -1118,6 +1168,7 @@ $code.=<<___;
 .type	ecp_nistz256_point_add_affine,%function
 .align	5
 ecp_nistz256_point_add_affine:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-80]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1129,8 +1180,10 @@ ecp_nistz256_point_add_affine:
 	mov	$rp_real,$rp
 	mov	$ap_real,$ap
 	mov	$bp_real,$bp
-	ldr	$poly1,.Lpoly+8
-	ldr	$poly3,.Lpoly+24
+	adrp	$poly3,.Lpoly
+	add	$poly3,$poly3,:lo12:.Lpoly
+	ldr	$poly1,[$poly3,#8]
+	ldr	$poly3,[$poly3,#24]
 
 	ldp	$a0,$a1,[$ap,#64]	// in1_z
 	ldp	$a2,$a3,[$ap,#64+16]
@@ -1138,7 +1191,7 @@ ecp_nistz256_point_add_affine:
 	orr	$t2,$a2,$a3
 	orr	$in1infty,$t0,$t2
 	cmp	$in1infty,#0
-	csetm	$in1infty,ne		// !in1infty
+	csetm	$in1infty,ne		// ~in1infty
 
 	ldp	$acc0,$acc1,[$bp]	// in2_x
 	ldp	$acc2,$acc3,[$bp,#16]
@@ -1152,7 +1205,7 @@ ecp_nistz256_point_add_affine:
 	orr	$t0,$t0,$t2
 	orr	$in2infty,$acc0,$t0
 	cmp	$in2infty,#0
-	csetm	$in2infty,ne		// !in2infty
+	csetm	$in2infty,ne		// ~in2infty
 
 	add	$rp,sp,#$Z1sqr
 	bl	__ecp_nistz256_sqr_mont	// p256_sqr_mont(Z1sqr, in1_z);
@@ -1262,14 +1315,14 @@ ___
 for($i=0;$i<64;$i+=32) {		# conditional moves
 $code.=<<___;
 	ldp	$acc0,$acc1,[$ap_real,#$i]	// in1
-	cmp	$in1infty,#0			// !$in1intfy, remember?
+	cmp	$in1infty,#0			// ~$in1intfy, remember?
 	ldp	$acc2,$acc3,[$ap_real,#$i+16]
 	csel	$t0,$a0,$t0,ne
 	csel	$t1,$a1,$t1,ne
 	ldp	$a0,$a1,[sp,#$res_x+$i+32]	// res
 	csel	$t2,$a2,$t2,ne
 	csel	$t3,$a3,$t3,ne
-	cmp	$in2infty,#0			// !$in2intfy, remember?
+	cmp	$in2infty,#0			// ~$in2intfy, remember?
 	ldp	$a2,$a3,[sp,#$res_x+$i+48]
 	csel	$acc0,$t0,$acc0,ne
 	csel	$acc1,$t1,$acc1,ne
@@ -1281,18 +1334,19 @@ $code.=<<___;
 	stp	$acc2,$acc3,[$rp_real,#$i+16]
 ___
 $code.=<<___	if ($i == 0);
-	adr	$bp_real,.Lone_mont-64
+	adrp	$bp_real,.Lone_mont-64
+	add	$bp_real,$bp_real,:lo12:.Lone_mont-64
 ___
 }
 $code.=<<___;
 	ldp	$acc0,$acc1,[$ap_real,#$i]	// in1
-	cmp	$in1infty,#0			// !$in1intfy, remember?
+	cmp	$in1infty,#0			// ~$in1intfy, remember?
 	ldp	$acc2,$acc3,[$ap_real,#$i+16]
 	csel	$t0,$a0,$t0,ne
 	csel	$t1,$a1,$t1,ne
 	csel	$t2,$a2,$t2,ne
 	csel	$t3,$a3,$t3,ne
-	cmp	$in2infty,#0			// !$in2intfy, remember?
+	cmp	$in2infty,#0			// ~$in2intfy, remember?
 	csel	$acc0,$t0,$acc0,ne
 	csel	$acc1,$t1,$acc1,ne
 	csel	$acc2,$t2,$acc2,ne
@@ -1306,8 +1360,311 @@ $code.=<<___;
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
 	ldp	x29,x30,[sp],#80
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	ecp_nistz256_point_add_affine,.-ecp_nistz256_point_add_affine
+___
+}
+if (1) {
+my ($ord0,$ord1) = ($poly1,$poly3);
+my ($ord2,$ord3,$ordk,$t4) = map("x$_",(21..24));
+my $acc7 = $bi;
+
+$code.=<<___;
+////////////////////////////////////////////////////////////////////////
+// void ecp_nistz256_ord_mul_mont(uint64_t res[4], uint64_t a[4],
+//                                uint64_t b[4]);
+.globl	ecp_nistz256_ord_mul_mont
+.type	ecp_nistz256_ord_mul_mont,%function
+.align	4
+ecp_nistz256_ord_mul_mont:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
+	stp	x29,x30,[sp,#-64]!
+	add	x29,sp,#0
+	stp	x19,x20,[sp,#16]
+	stp	x21,x22,[sp,#32]
+	stp	x23,x24,[sp,#48]
+
+	adrp	$ordk,.Lord
+	add	$ordk,$ordk,:lo12:.Lord
+	ldr	$bi,[$bp]		// bp[0]
+	ldp	$a0,$a1,[$ap]
+	ldp	$a2,$a3,[$ap,#16]
+
+	ldp	$ord0,$ord1,[$ordk,#0]
+	ldp	$ord2,$ord3,[$ordk,#16]
+	ldr	$ordk,[$ordk,#32]
+
+	mul	$acc0,$a0,$bi		// a[0]*b[0]
+	umulh	$t0,$a0,$bi
+
+	mul	$acc1,$a1,$bi		// a[1]*b[0]
+	umulh	$t1,$a1,$bi
+
+	mul	$acc2,$a2,$bi		// a[2]*b[0]
+	umulh	$t2,$a2,$bi
+
+	mul	$acc3,$a3,$bi		// a[3]*b[0]
+	umulh	$acc4,$a3,$bi
+
+	mul	$t4,$acc0,$ordk
+
+	adds	$acc1,$acc1,$t0		// accumulate high parts of multiplication
+	adcs	$acc2,$acc2,$t1
+	adcs	$acc3,$acc3,$t2
+	adc	$acc4,$acc4,xzr
+	mov	$acc5,xzr
+___
+for ($i=1;$i<4;$i++) {
+	################################################################
+	#            ffff0000.ffffffff.yyyyyyyy.zzzzzzzz
+	# *                                     abcdefgh
+	# + xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx
+	#
+	# Now observing that ff..ff*x = (2^n-1)*x = 2^n*x-x, we
+	# rewrite above as:
+	#
+	#   xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx
+	# - 0000abcd.efgh0000.abcdefgh.00000000.00000000
+	# + abcdefgh.abcdefgh.yzayzbyz.cyzdyzey.zfyzgyzh
+$code.=<<___;
+	ldr	$bi,[$bp,#8*$i]		// b[i]
+
+	lsl	$t0,$t4,#32
+	subs	$acc2,$acc2,$t4
+	lsr	$t1,$t4,#32
+	sbcs	$acc3,$acc3,$t0
+	sbcs	$acc4,$acc4,$t1
+	sbc	$acc5,$acc5,xzr
+
+	subs	xzr,$acc0,#1
+	umulh	$t1,$ord0,$t4
+	mul	$t2,$ord1,$t4
+	umulh	$t3,$ord1,$t4
+
+	adcs	$t2,$t2,$t1
+	 mul	$t0,$a0,$bi
+	adc	$t3,$t3,xzr
+	 mul	$t1,$a1,$bi
+
+	adds	$acc0,$acc1,$t2
+	 mul	$t2,$a2,$bi
+	adcs	$acc1,$acc2,$t3
+	 mul	$t3,$a3,$bi
+	adcs	$acc2,$acc3,$t4
+	adcs	$acc3,$acc4,$t4
+	adc	$acc4,$acc5,xzr
+
+	adds	$acc0,$acc0,$t0		// accumulate low parts
+	umulh	$t0,$a0,$bi
+	adcs	$acc1,$acc1,$t1
+	umulh	$t1,$a1,$bi
+	adcs	$acc2,$acc2,$t2
+	umulh	$t2,$a2,$bi
+	adcs	$acc3,$acc3,$t3
+	umulh	$t3,$a3,$bi
+	adc	$acc4,$acc4,xzr
+	mul	$t4,$acc0,$ordk
+	adds	$acc1,$acc1,$t0		// accumulate high parts
+	adcs	$acc2,$acc2,$t1
+	adcs	$acc3,$acc3,$t2
+	adcs	$acc4,$acc4,$t3
+	adc	$acc5,xzr,xzr
+___
+}
+$code.=<<___;
+	lsl	$t0,$t4,#32		// last reduction
+	subs	$acc2,$acc2,$t4
+	lsr	$t1,$t4,#32
+	sbcs	$acc3,$acc3,$t0
+	sbcs	$acc4,$acc4,$t1
+	sbc	$acc5,$acc5,xzr
+
+	subs	xzr,$acc0,#1
+	umulh	$t1,$ord0,$t4
+	mul	$t2,$ord1,$t4
+	umulh	$t3,$ord1,$t4
+
+	adcs	$t2,$t2,$t1
+	adc	$t3,$t3,xzr
+
+	adds	$acc0,$acc1,$t2
+	adcs	$acc1,$acc2,$t3
+	adcs	$acc2,$acc3,$t4
+	adcs	$acc3,$acc4,$t4
+	adc	$acc4,$acc5,xzr
+
+	subs	$t0,$acc0,$ord0		// ret -= modulus
+	sbcs	$t1,$acc1,$ord1
+	sbcs	$t2,$acc2,$ord2
+	sbcs	$t3,$acc3,$ord3
+	sbcs	xzr,$acc4,xzr
+
+	csel	$acc0,$acc0,$t0,lo	// ret = borrow ? ret : ret-modulus
+	csel	$acc1,$acc1,$t1,lo
+	csel	$acc2,$acc2,$t2,lo
+	stp	$acc0,$acc1,[$rp]
+	csel	$acc3,$acc3,$t3,lo
+	stp	$acc2,$acc3,[$rp,#16]
+
+	ldp	x19,x20,[sp,#16]
+	ldp	x21,x22,[sp,#32]
+	ldp	x23,x24,[sp,#48]
+	ldr	x29,[sp],#64
+	ret
+.size	ecp_nistz256_ord_mul_mont,.-ecp_nistz256_ord_mul_mont
+
+////////////////////////////////////////////////////////////////////////
+// void ecp_nistz256_ord_sqr_mont(uint64_t res[4], uint64_t a[4],
+//                                uint64_t rep);
+.globl	ecp_nistz256_ord_sqr_mont
+.type	ecp_nistz256_ord_sqr_mont,%function
+.align	4
+ecp_nistz256_ord_sqr_mont:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
+	stp	x29,x30,[sp,#-64]!
+	add	x29,sp,#0
+	stp	x19,x20,[sp,#16]
+	stp	x21,x22,[sp,#32]
+	stp	x23,x24,[sp,#48]
+
+	adrp	$ordk,.Lord
+	add	$ordk,$ordk,:lo12:.Lord
+	ldp	$a0,$a1,[$ap]
+	ldp	$a2,$a3,[$ap,#16]
+
+	ldp	$ord0,$ord1,[$ordk,#0]
+	ldp	$ord2,$ord3,[$ordk,#16]
+	ldr	$ordk,[$ordk,#32]
+	b	.Loop_ord_sqr
+
+.align	4
+.Loop_ord_sqr:
+	sub	$bp,$bp,#1
+	////////////////////////////////////////////////////////////////
+	//  |  |  |  |  |  |a1*a0|  |
+	//  |  |  |  |  |a2*a0|  |  |
+	//  |  |a3*a2|a3*a0|  |  |  |
+	//  |  |  |  |a2*a1|  |  |  |
+	//  |  |  |a3*a1|  |  |  |  |
+	// *|  |  |  |  |  |  |  | 2|
+	// +|a3*a3|a2*a2|a1*a1|a0*a0|
+	//  |--+--+--+--+--+--+--+--|
+	//  |A7|A6|A5|A4|A3|A2|A1|A0|, where Ax is $accx, i.e. follow $accx
+	//
+	//  "can't overflow" below mark carrying into high part of
+	//  multiplication result, which can't overflow, because it
+	//  can never be all ones.
+
+	mul	$acc1,$a1,$a0		// a[1]*a[0]
+	umulh	$t1,$a1,$a0
+	mul	$acc2,$a2,$a0		// a[2]*a[0]
+	umulh	$t2,$a2,$a0
+	mul	$acc3,$a3,$a0		// a[3]*a[0]
+	umulh	$acc4,$a3,$a0
+
+	adds	$acc2,$acc2,$t1		// accumulate high parts of multiplication
+	 mul	$t0,$a2,$a1		// a[2]*a[1]
+	 umulh	$t1,$a2,$a1
+	adcs	$acc3,$acc3,$t2
+	 mul	$t2,$a3,$a1		// a[3]*a[1]
+	 umulh	$t3,$a3,$a1
+	adc	$acc4,$acc4,xzr		// can't overflow
+
+	mul	$acc5,$a3,$a2		// a[3]*a[2]
+	umulh	$acc6,$a3,$a2
+
+	adds	$t1,$t1,$t2		// accumulate high parts of multiplication
+	 mul	$acc0,$a0,$a0		// a[0]*a[0]
+	adc	$t2,$t3,xzr		// can't overflow
+
+	adds	$acc3,$acc3,$t0		// accumulate low parts of multiplication
+	 umulh	$a0,$a0,$a0
+	adcs	$acc4,$acc4,$t1
+	 mul	$t1,$a1,$a1		// a[1]*a[1]
+	adcs	$acc5,$acc5,$t2
+	 umulh	$a1,$a1,$a1
+	adc	$acc6,$acc6,xzr		// can't overflow
+
+	adds	$acc1,$acc1,$acc1	// acc[1-6]*=2
+	 mul	$t2,$a2,$a2		// a[2]*a[2]
+	adcs	$acc2,$acc2,$acc2
+	 umulh	$a2,$a2,$a2
+	adcs	$acc3,$acc3,$acc3
+	 mul	$t3,$a3,$a3		// a[3]*a[3]
+	adcs	$acc4,$acc4,$acc4
+	 umulh	$a3,$a3,$a3
+	adcs	$acc5,$acc5,$acc5
+	adcs	$acc6,$acc6,$acc6
+	adc	$acc7,xzr,xzr
+
+	adds	$acc1,$acc1,$a0		// +a[i]*a[i]
+	 mul	$t4,$acc0,$ordk
+	adcs	$acc2,$acc2,$t1
+	adcs	$acc3,$acc3,$a1
+	adcs	$acc4,$acc4,$t2
+	adcs	$acc5,$acc5,$a2
+	adcs	$acc6,$acc6,$t3
+	adc	$acc7,$acc7,$a3
+___
+for($i=0; $i<4; $i++) {			# reductions
+$code.=<<___;
+	subs	xzr,$acc0,#1
+	umulh	$t1,$ord0,$t4
+	mul	$t2,$ord1,$t4
+	umulh	$t3,$ord1,$t4
+
+	adcs	$t2,$t2,$t1
+	adc	$t3,$t3,xzr
+
+	adds	$acc0,$acc1,$t2
+	adcs	$acc1,$acc2,$t3
+	adcs	$acc2,$acc3,$t4
+	adc	$acc3,xzr,$t4		// can't overflow
+___
+$code.=<<___	if ($i<3);
+	mul	$t3,$acc0,$ordk
+___
+$code.=<<___;
+	lsl	$t0,$t4,#32
+	subs	$acc1,$acc1,$t4
+	lsr	$t1,$t4,#32
+	sbcs	$acc2,$acc2,$t0
+	sbc	$acc3,$acc3,$t1		// can't borrow
+___
+	($t3,$t4) = ($t4,$t3);
+}
+$code.=<<___;
+	adds	$acc0,$acc0,$acc4	// accumulate upper half
+	adcs	$acc1,$acc1,$acc5
+	adcs	$acc2,$acc2,$acc6
+	adcs	$acc3,$acc3,$acc7
+	adc	$acc4,xzr,xzr
+
+	subs	$t0,$acc0,$ord0		// ret -= modulus
+	sbcs	$t1,$acc1,$ord1
+	sbcs	$t2,$acc2,$ord2
+	sbcs	$t3,$acc3,$ord3
+	sbcs	xzr,$acc4,xzr
+
+	csel	$a0,$acc0,$t0,lo	// ret = borrow ? ret : ret-modulus
+	csel	$a1,$acc1,$t1,lo
+	csel	$a2,$acc2,$t2,lo
+	csel	$a3,$acc3,$t3,lo
+
+	cbnz	$bp,.Loop_ord_sqr
+
+	stp	$a0,$a1,[$rp]
+	stp	$a2,$a3,[$rp,#16]
+
+	ldp	x19,x20,[sp,#16]
+	ldp	x21,x22,[sp,#32]
+	ldp	x23,x24,[sp,#48]
+	ldr	x29,[sp],#64
+	ret
+.size	ecp_nistz256_ord_sqr_mont,.-ecp_nistz256_ord_sqr_mont
 ___
 }	}
 
@@ -1322,6 +1679,8 @@ $code.=<<___;
 .type	ecp_nistz256_scatter_w5,%function
 .align	4
 ecp_nistz256_scatter_w5:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1329,7 +1688,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp]		// X
 	ldp	x6,x7,[$inp,#16]
-	str	w4,[$out,#64*0-4]
+	stur	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1345,7 +1704,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp,#32]	// Y
 	ldp	x6,x7,[$inp,#48]
-	str	w4,[$out,#64*0-4]
+	stur	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1361,7 +1720,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp,#64]	// Z
 	ldp	x6,x7,[$inp,#80]
-	str	w4,[$out,#64*0-4]
+	stur	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1384,6 +1743,8 @@ ecp_nistz256_scatter_w5:
 .type	ecp_nistz256_gather_w5,%function
 .align	4
 ecp_nistz256_gather_w5:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1461,6 +1822,8 @@ ecp_nistz256_gather_w5:
 .type	ecp_nistz256_scatter_w7,%function
 .align	4
 ecp_nistz256_scatter_w7:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1505,6 +1868,8 @@ ecp_nistz256_scatter_w7:
 .type	ecp_nistz256_gather_w7,%function
 .align	4
 ecp_nistz256_gather_w7:
+	AARCH64_VALID_CALL_TARGET
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1555,4 +1920,4 @@ foreach (split("\n",$code)) {
 
 	print $_,"\n";
 }
-close STDOUT;	# enforce flush
+close STDOUT or die "error closing STDOUT: $!";	# enforce flush

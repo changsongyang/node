@@ -27,7 +27,7 @@ const url = require('url');
 
 const expectedRequests = ['/hello', '/there', '/world'];
 
-const server = http.Server(common.mustCall(function(req, res) {
+const server = http.Server(common.mustCall((req, res) => {
   assert.strictEqual(expectedRequests.shift(), req.url);
 
   switch (req.url) {
@@ -43,16 +43,16 @@ const server = http.Server(common.mustCall(function(req, res) {
       break;
     case '/world':
       assert.strictEqual(req.method, 'POST');
-      assert.deepStrictEqual(req.headers.cookie, 'abc=123; def=456; ghi=789');
+      assert.strictEqual(req.headers.cookie, 'abc=123; def=456; ghi=789');
       break;
     default:
-      assert(false, `Unexpected request for ${req.url}`);
+      assert.fail(`Unexpected request for ${req.url}`);
   }
 
   if (expectedRequests.length === 0)
-    this.close();
+    server.close();
 
-  req.on('end', function() {
+  req.on('end', () => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.write(`The path was ${url.parse(req.url).pathname}`);
     res.end();
@@ -61,10 +61,10 @@ const server = http.Server(common.mustCall(function(req, res) {
 }, 3));
 server.listen(0);
 
-server.on('listening', function() {
-  const agent = new http.Agent({ port: this.address().port, maxSockets: 1 });
+server.on('listening', common.mustCall(() => {
+  const agent = new http.Agent({ port: server.address().port, maxSockets: 1 });
   const req = http.get({
-    port: this.address().port,
+    port: server.address().port,
     path: '/hello',
     headers: {
       Accept: '*/*',
@@ -113,7 +113,9 @@ server.on('listening', function() {
       path: '/world',
       headers: [ ['Cookie', 'abc=123'],
                  ['Cookie', 'def=456'],
-                 ['Cookie', 'ghi=789'] ],
+                 ['Cookie', 'ghi=789'],
+                 ['Host', 'example.com'],
+      ],
       agent: agent
     }, common.mustCall((res) => {
       const cookieHeaders = req._header.match(/^Cookie: .+$/img);
@@ -131,4 +133,4 @@ server.on('listening', function() {
     }));
     req.end();
   }), 2);
-});
+}));

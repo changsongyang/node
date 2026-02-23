@@ -71,10 +71,8 @@ for (var constructor of typedArrayConstructors) {
   assertEquals("1,2,3", o1.join());
   assertEquals("1,2,3", o1.toString());
   assertThrows(function() { o1.toLocaleString() }, TypeError);
-  // TODO(littledan): Use the same function for TypedArray as for
-  // Array, as the spec says (but Firefox doesn't do either).
-  // Currently, using the same method leads to a bootstrap failure.
-  // assertEquals(o1.toString, Array.prototype.toString);
+
+  assertEquals(o1.toString, Array.prototype.toString);
 
   // Redefining length does not change result
   var a5 = new constructor([1, 2, 3])
@@ -93,15 +91,19 @@ for (var constructor of typedArrayConstructors) {
     let NumberToLocaleString = Number.prototype.toLocaleString;
     Number.prototype.toLocaleString = pushArgs("Number");
 
+    // According to the ECMA-402 specification, the optional arguments locales
+    // and options must be passed.  Without the ECMA-402 internationalization
+    // API, the optional arguments must not be passed.
+    const noArgs = (typeof Intl !== "object") ? [] : [undefined, undefined];
     (new constructor([1, 2])).toLocaleString();
-    assertEquals(["Number", [], "Number", []], log);
+    assertEquals(["Number", noArgs, "Number", noArgs], log);
 
     Number.prototype.toLocaleString = NumberToLocaleString;
   })();
 
   // Detached Operation
   var array = new constructor([1, 2, 3]);
-  %ArrayBufferNeuter(array.buffer);
+  %ArrayBufferDetach(array.buffer);
   assertThrows(() => array.join(), TypeError);
   assertThrows(() => array.toLocalString(), TypeError);
   assertThrows(() => array.toString(), TypeError);

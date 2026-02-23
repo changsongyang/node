@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-public-fields
 "use strict";
 
 {
@@ -160,6 +159,16 @@
 {
   class C {
     c = function() { return 1 };
+  }
+
+  let c = new C;
+  assertEquals('c', c.c.name);
+}
+
+{
+  let x = 'c';
+  class C {
+    [x] = function() { return 1 };
   }
 
   let c = new C;

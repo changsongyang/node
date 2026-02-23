@@ -5,27 +5,36 @@ const assert = require('assert');
 
 const bench = common.createBenchmark(main, {
   n: [1e6],
-  type: ['raw', 'diff']
+  type: ['raw', 'diff', 'bigint'],
 });
 
 function main({ n, type }) {
   const hrtime = process.hrtime;
-  var noDead = hrtime();
-  var i;
+  let noDead = type === 'bigint' ? hrtime.bigint() : hrtime();
 
-  if (type === 'raw') {
-    bench.start();
-    for (i = 0; i < n; i++) {
-      noDead = hrtime();
-    }
-    bench.end(n);
-  } else {
-    bench.start();
-    for (i = 0; i < n; i++) {
-      noDead = hrtime(noDead);
-    }
-    bench.end(n);
+  switch (type) {
+    case 'raw':
+      bench.start();
+      for (let i = 0; i < n; i++) {
+        noDead = hrtime();
+      }
+      bench.end(n);
+      break;
+    case 'diff':
+      bench.start();
+      for (let i = 0; i < n; i++) {
+        noDead = hrtime(noDead);
+      }
+      bench.end(n);
+      break;
+    case 'bigint':
+      bench.start();
+      for (let i = 0; i < n; i++) {
+        noDead = hrtime.bigint();
+      }
+      bench.end(n);
+      break;
   }
 
-  assert.ok(Array.isArray(noDead));
+  assert.ok(Array.isArray(noDead) || typeof noDead === 'bigint');
 }

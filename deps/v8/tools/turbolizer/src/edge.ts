@@ -2,93 +2,80 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {GNode, DEFAULT_NODE_BUBBLE_RADIUS} from "./node.js"
+import * as C from "./common/constants";
+import { GraphNode } from "./phases/graph-phase/graph-node";
+import { TurboshaftGraphOperation } from "./phases/turboshaft-graph-phase/turboshaft-graph-operation";
+import { TurboshaftGraphBlock } from "./phases/turboshaft-graph-phase/turboshaft-graph-block";
+import { Graph } from "./graph";
+import { TurboshaftGraph } from "./turboshaft-graph";
 
-export const MINIMUM_EDGE_SEPARATION = 20;
-
-export function isEdgeInitiallyVisible(target, index, source, type) {
-  return type == "control" && (target.cfg || source.cfg);
-}
-
-export class Edge {
-  target: GNode;
-  source: GNode;
+export abstract class Edge<NodeType extends GraphNode | TurboshaftGraphOperation
+  | TurboshaftGraphBlock> {
+  target: NodeType;
+  source: NodeType;
   index: number;
-  type: String;
   backEdgeNumber: number;
   visible: boolean;
 
-  constructor(target: GNode, index: number, source: GNode, type: string) {
+  constructor(target: NodeType, index: number, source: NodeType) {
     this.target = target;
-    this.source = source;
     this.index = index;
-    this.type = type;
+    this.source = source;
     this.backEdgeNumber = 0;
-    this.visible = isEdgeInitiallyVisible(target, index, source, type);
+    this.visible = false;
   }
 
-
-  stringID() {
-    return this.source.id + "," + this.index + "," + this.target.id;
-  };
-
-  isVisible() {
-    return this.visible && this.source.visible && this.target.visible;
-  };
-
-  getInputHorizontalPosition(graph) {
-    if (this.backEdgeNumber > 0) {
-      return graph.maxGraphNodeX + this.backEdgeNumber * MINIMUM_EDGE_SEPARATION;
+  public getInputHorizontalPosition(graph: Graph | TurboshaftGraph, extendHeight: boolean): number {
+    if (graph.graphPhase.rendered && this.backEdgeNumber > 0) {
+      return graph.maxGraphNodeX + this.backEdgeNumber * C.MINIMUM_EDGE_SEPARATION;
     }
-    var source = this.source;
-    var target = this.target;
-    var index = this.index;
-    var input_x = target.x + target.getInputX(index);
-    var inputApproach = target.getInputApproach(this.index);
-    var outputApproach = source.getOutputApproach(graph);
-    if (inputApproach > outputApproach) {
-      return input_x;
-    } else {
-      var inputOffset = MINIMUM_EDGE_SEPARATION * (index + 1);
-      return (target.x < source.x)
-        ? (target.x + target.getTotalNodeWidth() + inputOffset)
-        : (target.x - inputOffset)
-    }
+    const source = this.source;
+    const target = this.target;
+    const index = this.index;
+    const inputX = target.x + target.getInputX(index);
+    const inputApproach = target.getInputApproach(this.index);
+    const outputApproach = source.getOutputApproach(extendHeight);
+    if (inputApproach > outputApproach) return inputX;
+    const inputOffset = C.MINIMUM_EDGE_SEPARATION * (index + 1);
+    return target.x < source.x
+      ? target.x + target.getWidth() + inputOffset
+      : target.x - inputOffset;
   }
 
-  generatePath(graph) {
-    var target = this.target;
-    var source = this.source;
-    var input_x = target.x + target.getInputX(this.index);
-    var arrowheadHeight = 7;
-    var input_y = target.y - 2 * DEFAULT_NODE_BUBBLE_RADIUS - arrowheadHeight;
-    var output_x = source.x + source.getOutputX();
-    var output_y = source.y + graph.getNodeHeight(source) + DEFAULT_NODE_BUBBLE_RADIUS;
-    var inputApproach = target.getInputApproach(this.index);
-    var outputApproach = source.getOutputApproach(graph);
-    var horizontalPos = this.getInputHorizontalPosition(graph);
+  public generatePath(graph: Graph | TurboshaftGraph, extendHeight: boolean, compactView: boolean = false): string {
+    const target = this.target;
+    const source = this.source;
+    const inputX = target.x + target.getInputX(this.index);
+    const inputY = target.y - 2 * C.DEFAULT_NODE_BUBBLE_RADIUS - C.ARROW_HEAD_HEIGHT;
+    const outputX = source.x + source.getOutputX();
+    const outputY = source.y + source.getHeight(extendHeight, compactView) + C.DEFAULT_NODE_BUBBLE_RADIUS;
+    let inputApproach = target.getInputApproach(this.index);
+    const outputApproach = source.getOutputApproach(extendHeight);
+    const horizontalPos = this.getInputHorizontalPosition(graph, extendHeight);
 
-    var result = "M" + output_x + "," + output_y +
-      "L" + output_x + "," + outputApproach +
-      "L" + horizontalPos + "," + outputApproach;
+    let path: string;
 
-    if (horizontalPos != input_x) {
-      result += "L" + horizontalPos + "," + inputApproach;
-    } else {
-      if (inputApproach < outputApproach) {
+    if (inputY < outputY) {
+      path = `M ${outputX} ${outputY}\nL ${outputX} ${outputApproach}\nL ${horizontalPos} ${outputApproach}`;
+      if (horizontalPos !== inputX) {
+        path += `L ${horizontalPos} ${inputApproach}`;
+      } else if (inputApproach < outputApproach) {
         inputApproach = outputApproach;
       }
+      path += `L ${inputX} ${inputApproach}\nL ${inputX} ${inputY}`;
+    } else {
+      const controlY = outputY + (inputY - outputY) * C.BEZIER_CONSTANT;
+      path = `M ${outputX} ${outputY}\nC ${outputX} ${controlY},\n${inputX} ${outputY},\n${inputX} ${inputY}`;
     }
 
-    result += "L" + input_x + "," + inputApproach +
-      "L" + input_x + "," + input_y;
-    return result;
+    return path;
   }
 
-  isBackEdge() {
-    return this.target.hasBackEdges() && (this.target.rank < this.source.rank);
+  public isVisible(): boolean {
+    return this.visible && this.source.visible && this.target.visible;
   }
 
+  public toString(): string {
+    return `${this.source.id},${this.index},${this.target.id}`;
+  }
 }
-
-export const edgeToStr = (e: Edge) => e.stringID();

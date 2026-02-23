@@ -12,14 +12,17 @@ const NS_PER_MS = 1000000n;
 
 const hrtime = process.hrtime.bigint;
 
+const loopDuration = common.platformTimeout(1000n);
+const timeout = common.platformTimeout(100);
+
 function loop() {
   const start = hrtime();
   while (1) {
     const current = hrtime();
     const span = (current - start) / NS_PER_MS;
-    if (span >= 100n) {
+    if (span >= loopDuration) {
       throw new Error(
-        `escaped timeout at ${span} milliseconds!`);
+        `escaped ${timeout}ms timeout at ${span}ms`);
     }
   }
 }
@@ -30,11 +33,11 @@ assert.throws(() => {
     {
       hrtime,
       queueMicrotask,
-      loop
+      loop,
     },
-    { timeout: common.platformTimeout(5) }
+    { timeout, microtaskMode: 'afterScriptRun' },
   );
 }, {
   code: 'ERR_SCRIPT_EXECUTION_TIMEOUT',
-  message: 'Script execution timed out after 5ms'
+  message: `Script execution timed out after ${timeout}ms`,
 });

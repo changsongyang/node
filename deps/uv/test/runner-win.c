@@ -43,7 +43,7 @@
 
 
 /* Do platform-specific initialization. */
-int platform_init(int argc, char **argv) {
+void platform_init(int argc, char **argv) {
   /* Disable the "application crashed" popup. */
   SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX |
       SEM_NOOPENFILEERRORBOX);
@@ -56,13 +56,17 @@ int platform_init(int argc, char **argv) {
   _setmode(1, _O_BINARY);
   _setmode(2, _O_BINARY);
 
+#ifdef _MSC_VER
+  _set_fmode(_O_BINARY);
+#else
+  _fmode = _O_BINARY;
+#endif
+
   /* Disable stdio output buffering. */
   setvbuf(stdout, NULL, _IONBF, 0);
   setvbuf(stderr, NULL, _IONBF, 0);
 
   strcpy(executable_path, argv[0]);
-
-  return 0;
 }
 
 
@@ -181,7 +185,7 @@ int process_wait(process_info_t *vec, int n, int timeout) {
   if (n == 0)
     return 0;
 
-  ASSERT(n <= MAXIMUM_WAIT_OBJECTS);
+  ASSERT_LE(n, MAXIMUM_WAIT_OBJECTS);
 
   for (i = 0; i < n; i++)
     handles[i] = vec[i].process;
@@ -194,7 +198,7 @@ int process_wait(process_info_t *vec, int n, int timeout) {
 
   result = WaitForMultipleObjects(n, handles, TRUE, timeout_api);
 
-  if (result >= WAIT_OBJECT_0 && result < WAIT_OBJECT_0 + n) {
+  if (result < WAIT_OBJECT_0 + n) {
     /* All processes are terminated. */
     return 0;
   }
@@ -215,29 +219,22 @@ long int process_output_size(process_info_t *p) {
 
 int process_copy_output(process_info_t* p, FILE* stream) {
   char buf[1024];
+  int partial;
   int fd, r;
-  FILE* f;
 
   fd = _open_osfhandle((intptr_t)p->stdio_out, _O_RDONLY | _O_TEXT);
   if (fd == -1)
     return -1;
-  f = _fdopen(fd, "rt");
-  if (f == NULL) {
-    _close(fd);
-    return -1;
-  }
 
-  r = fseek(f, 0, SEEK_SET);
+  r = _lseek(fd, 0, SEEK_SET);
   if (r < 0)
     return -1;
 
-  while (fgets(buf, sizeof(buf), f) != NULL)
-    print_lines(buf, strlen(buf), stream);
+  partial = 0;
+  while ((r = _read(fd, buf, sizeof(buf))) != 0)
+    partial = print_lines(buf, r, stream, partial);
 
-  if (ferror(f))
-    return -1;
-
-  fclose(f);
+  _close(fd);
   return 0;
 }
 
@@ -250,7 +247,7 @@ int process_read_last_line(process_info_t *p,
   DWORD start;
   OVERLAPPED overlapped;
 
-  ASSERT(buffer_len > 0);
+  ASSERT_GT(buffer_len, 0);
 
   size = GetFileSize(p->stdio_out, NULL);
   if (size == INVALID_FILE_SIZE)
@@ -268,7 +265,8 @@ int process_read_last_line(process_info_t *p,
   if (!ReadFile(p->stdio_out, buffer, buffer_len - 1, &read, &overlapped))
     return -1;
 
-  for (start = read - 1; start >= 0; start--) {
+  start = read;
+  while (start-- > 0) {
     if (buffer[start] == '\n' || buffer[start] == '\r')
       break;
   }
@@ -308,13 +306,13 @@ void process_cleanup(process_info_t *p) {
 }
 
 
-static int clear_line() {
+static int clear_line(void) {
   HANDLE handle;
   CONSOLE_SCREEN_BUFFER_INFO info;
   COORD coord;
   DWORD written;
 
-  handle = (HANDLE)_get_osfhandle(fileno(stderr));
+  handle = (HANDLE)_get_osfhandle(_fileno(stderr));
   if (handle == INVALID_HANDLE_VALUE)
     return -1;
 
@@ -347,10 +345,4 @@ void rewind_cursor() {
     /* If clear_line fails (stdout is not a console), print a newline. */
     fprintf(stderr, "\n");
   }
-}
-
-
-/* Pause the calling thread for a number of milliseconds. */
-void uv_sleep(int msec) {
-  Sleep(msec);
 }

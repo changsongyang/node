@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --noalways-opt --opt
+// Flags: --allow-natives-syntax --turbofan --no-assert-types
 
 // It's nice to run this in other browsers too.
 var standalone = false;
@@ -52,12 +52,16 @@ if (standalone) {
   assertUnoptimized = empty_func;
   assertOptimized = empty_func;
 
+  prepareForOptimize = emtpy_func;
   optimize = empty_func;
   clearFunctionTypeFeedback = empty_func;
   deoptimizeFunction = empty_func;
 } else {
   optimize = function(name) {
     %OptimizeFunctionOnNextCall(name);
+  }
+  prepareForOptimize = function(name) {
+    %PrepareFunctionForOptimization(name);
   }
   clearFunctionTypeFeedback = function(name) {
     %ClearFunctionFeedback(name);
@@ -76,6 +80,7 @@ function base_getter_test(create_func) {
   var ap = [];
   ap.__defineGetter__(0, function() { calls++; return 0; });
 
+  prepareForOptimize(foo);
   foo(a);
   assertUnoptimized(foo);
   // Smi and Double elements transition the KeyedLoadIC to Generic state
@@ -145,6 +150,7 @@ function base_getter_test(create_func) {
   a = create_func();
   ap2 = [];
   a.__proto__ = ap2;
+  prepareForOptimize(foo);
   foo(a);
   foo(a);
   foo(a);
@@ -165,6 +171,7 @@ function base_getter_test(create_func) {
   a = create_func();
   a.__proto__ = ap2;
   bar = function(a) { return a[3] + 600; }
+  prepareForOptimize(bar);
   bar(a);
   bar(a);
   bar(a);
@@ -207,6 +214,7 @@ for(var c = 0; c < cf.length; c++) {
 
 var a = [3.5,,,3.5];
 fun = function(a) { return a[0] + 5.5; }
+prepareForOptimize(fun);
 fun(a);
 fun(a);
 fun(a);  // should have a monomorphic KeyedLoadIC.
@@ -214,10 +222,14 @@ optimize(fun);
 fun(a);
 assertOptimized(fun);
 
-// returning undefined shouldn't phase us.
-delete a[0];
-fun(a);
-assertOptimized(fun);
+// Maglev and TF differs here: Maglev will not try to silence a holey nan
+// if it hasn't seen one.
+if (isTurboFanned(fun)) {
+  // returning undefined shouldn't phase us.
+  delete a[0];
+  fun(a);
+  assertOptimized(fun);
+}
 
 // but messing up the prototype chain will.
 a.__proto__ = [];
@@ -229,6 +241,7 @@ var a = [3.5,,,,3.5];
 var ap = [,,3.5];
 ap.__proto__ = a.__proto__;
 a.__proto__ = ap;
+prepareForOptimize(fun);
 fun(a);
 optimize(fun);
 fun(a);

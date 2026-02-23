@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # vim:fenc=utf-8:shiftwidth=2
 
 # Copyright 2018 the V8 project authors. All rights reserved.
@@ -13,42 +13,56 @@ BUILD.gn. Just compile to check whether there are any violations to the rule
 that each header must be includable in isolation.
 """
 
+# for py2/py3 compatibility
+from __future__ import print_function
+
 import argparse
 import os
 import os.path
 import re
 import sys
 
-# TODO(clemensh): Extend to tests.
-DEFAULT_INPUT = ['base', 'src']
+# TODO(clemensb): Extend to tests.
+DEFAULT_INPUT = ['include', 'src']
 DEFAULT_GN_FILE = 'BUILD.gn'
 MY_DIR = os.path.dirname(os.path.realpath(__file__))
 V8_DIR = os.path.dirname(MY_DIR)
 OUT_DIR = os.path.join(V8_DIR, 'check-header-includes')
 AUTO_EXCLUDE = [
-  # flag-definitions.h needs a mode set for being included.
-  'src/flag-definitions.h',
-  # blacklist of headers we need to fix (https://crbug.com/v8/7965).
-  'src/allocation-site-scopes.h',
-  'src/compiler/allocation-builder.h',
-  'src/compiler/js-context-specialization.h',
-  'src/compiler/raw-machine-assembler.h',
-  'src/dateparser-inl.h',
-  'src/heap/incremental-marking.h',
-  'src/ic/ic.h',
-  'src/lookup.h',
-  'src/parsing/parser.h',
-  'src/parsing/preparser.h',
-  'src/regexp/jsregexp.h',
-  'src/snapshot/object-deserializer.h',
-  'src/transitions.h',
+    # Platform specific for iOS.
+    'src/base/ios-headers.h',
+    # flag-definitions.h needs a mode set for being included.
+    'src/flags/flag-definitions.h',
+    # recorder.h should only be included conditionally.
+    'src/libplatform/tracing/recorder.h',
+    # trap-handler-simulator.h can only be included in simulator builds.
+    'src/trap-handler/trap-handler-simulator.h',
+    # The src/wasm/*-impl.h coding pattern is generally at odds with the rule
+    # being enforced here: they are meant to provide possibly-incomplete
+    # templates, and their users must provide their prerequisites.
+    'src/wasm/function-body-decoder-impl.h',
+    'src/wasm/module-decoder-impl.h',
+    # wasm-interpreter-runtime-inl.h should only be included when building
+    # with V8_ENABLE_DRUMBRAKE which is not the case for the default build.
+    'src/wasm/interpreter/wasm-interpreter-runtime-inl.h',
+    # TODO(carlscab): Enable once Perfetto is built by default.
+    'src/tracing/code-data-source.h',
+    'src/tracing/code-trace-context.h',
+    'src/tracing/perfetto-logger.h',
+    'src/tracing/perfetto-utils.h',
 ]
 AUTO_EXCLUDE_PATTERNS = [
-  'src/base/atomicops_internals_.*',
+    'src/base/atomicops_internals_.*',
+    # TODO(petermarshall): Enable once Perfetto is built by default.
+    'src/libplatform/tracing/perfetto*',
+    # TODO(v8:7700): Enable once Maglev is built by default.
+    'src/maglev/.*',
 ] + [
-  # platform-specific headers
-  '\\b{}\\b'.format(p) for p in
-    ('win32', 'ia32', 'x64', 'arm', 'arm64', 'mips', 'mips64', 's390', 'ppc')]
+    # platform-specific headers
+    '\\b{}\\b'.format(p)
+    for p in ('win', 'win32', 'ia32', 'x64', 'arm', 'arm64', 'mips64', 's390',
+              'ppc', 'riscv', 'riscv64', 'riscv32', 'loong64')
+]
 
 args = None
 def parse_args():
@@ -71,7 +85,7 @@ def parse_args():
 
 def printv(line):
   if args.verbose:
-    print line
+    print(line)
 
 
 def find_all_headers():

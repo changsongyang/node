@@ -3,26 +3,22 @@
 // found in the LICENSE file.
 
 #include "src/compiler/constant-folding-reducer.h"
-#include "src/code-factory.h"
-#include "src/compiler/access-builder.h"
+
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-operator.h"
 #include "src/compiler/machine-operator.h"
-#include "src/compiler/node-properties.h"
-#include "src/compiler/operator-properties.h"
-#include "src/isolate-inl.h"
-#include "test/unittests/compiler/compiler-test-utils.h"
+#include "src/execution/isolate-inl.h"
 #include "test/unittests/compiler/graph-unittest.h"
 #include "test/unittests/compiler/node-test-utils.h"
 #include "testing/gmock-support.h"
-
-using testing::IsNaN;
 
 namespace v8 {
 namespace internal {
 namespace compiler {
 namespace constant_folding_reducer_unittest {
+
+using testing::IsNaN;
 
 namespace {
 
@@ -62,11 +58,8 @@ const double kIntegerValues[] = {-V8_INFINITY, INT_MIN, -1000.0,  -42.0,
 class ConstantFoldingReducerTest : public TypedGraphTest {
  public:
   ConstantFoldingReducerTest()
-      : TypedGraphTest(3),
-        js_heap_broker_(isolate(), zone()),
-        simplified_(zone()),
-        deps_(isolate(), zone()) {}
-  ~ConstantFoldingReducerTest() override {}
+      : TypedGraphTest(3), simplified_(zone()), deps_(broker(), zone()) {}
+  ~ConstantFoldingReducerTest() override = default;
 
  protected:
   Reduction Reduce(Node* node) {
@@ -74,38 +67,44 @@ class ConstantFoldingReducerTest : public TypedGraphTest {
     JSOperatorBuilder javascript(zone());
     JSGraph jsgraph(isolate(), graph(), common(), &javascript, simplified(),
                     &machine);
-    // TODO(titzer): mock the GraphReducer here for better unit testing.
-    GraphReducer graph_reducer(zone(), graph());
-    ConstantFoldingReducer reducer(&graph_reducer, &jsgraph, js_heap_broker());
+    GraphReducer graph_reducer(zone(), graph(), tick_counter(), broker());
+    ConstantFoldingReducer reducer(&graph_reducer, &jsgraph, broker());
     return reducer.Reduce(node);
   }
 
+  Node* UseValue(Node* node) {
+    Node* start = graph()->NewNode(common()->Start(1));
+    Node* zero = graph()->NewNode(common()->NumberConstant(0));
+    return graph()->NewNode(common()->Return(), zero, node, start, start);
+  }
+
   SimplifiedOperatorBuilder* simplified() { return &simplified_; }
-  JSHeapBroker* js_heap_broker() { return &js_heap_broker_; }
 
  private:
-  JSHeapBroker js_heap_broker_;
   SimplifiedOperatorBuilder simplified_;
   CompilationDependencies deps_;
 };
 
 TEST_F(ConstantFoldingReducerTest, ParameterWithMinusZero) {
   {
-    Reduction r = Reduce(Parameter(Type::NewConstant(
-        js_heap_broker(), factory()->minus_zero_value(), zone())));
+    Node* node = Parameter(Type::Constant(-0.0, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(-0.0));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(-0.0));
   }
   {
-    Reduction r = Reduce(Parameter(Type::MinusZero()));
+    Node* node = Parameter(Type::MinusZero());
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(-0.0));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(-0.0));
   }
   {
-    Reduction r = Reduce(Parameter(Type::Union(
-        Type::MinusZero(),
-        Type::NewConstant(js_heap_broker(), factory()->NewNumber(0), zone()),
-        zone())));
+    Node* node = Parameter(
+        Type::Union(Type::MinusZero(), Type::Constant(0, zone()), zone()));
+    UseValue(node);
+    Reduction r = Reduce(node);
     EXPECT_FALSE(r.Changed());
   }
 }
@@ -113,15 +112,18 @@ TEST_F(ConstantFoldingReducerTest, ParameterWithMinusZero) {
 TEST_F(ConstantFoldingReducerTest, ParameterWithNull) {
   Handle<HeapObject> null = factory()->null_value();
   {
-    Reduction r =
-        Reduce(Parameter(Type::NewConstant(js_heap_broker(), null, zone())));
+    Node* node = Parameter(Type::Constant(broker(), null, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsHeapConstant(null));
+    EXPECT_THAT(use_value->InputAt(1), IsHeapConstant(null));
   }
   {
-    Reduction r = Reduce(Parameter(Type::Null()));
+    Node* node = Parameter(Type::Null());
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsHeapConstant(null));
+    EXPECT_THAT(use_value->InputAt(1), IsHeapConstant(null));
   }
 }
 
@@ -130,52 +132,61 @@ TEST_F(ConstantFoldingReducerTest, ParameterWithNaN) {
                           std::numeric_limits<double>::quiet_NaN(),
                           std::numeric_limits<double>::signaling_NaN()};
   TRACED_FOREACH(double, nan, kNaNs) {
-    Handle<Object> constant = factory()->NewNumber(nan);
-    Reduction r = Reduce(
-        Parameter(Type::NewConstant(js_heap_broker(), constant, zone())));
+    Node* node = Parameter(Type::Constant(nan, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(IsNaN()));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(IsNaN()));
   }
   {
-    Reduction r = Reduce(Parameter(
-        Type::NewConstant(js_heap_broker(), factory()->nan_value(), zone())));
+    Node* node = Parameter(
+        Type::Constant(ReadOnlyRoots(isolate()).nan_value()->value(), zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(IsNaN()));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(IsNaN()));
   }
   {
-    Reduction r = Reduce(Parameter(Type::NaN()));
+    Node* node = Parameter(Type::NaN());
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(IsNaN()));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(IsNaN()));
   }
 }
 
 TEST_F(ConstantFoldingReducerTest, ParameterWithPlainNumber) {
   TRACED_FOREACH(double, value, kFloat64Values) {
-    Handle<Object> constant = factory()->NewNumber(value);
-    Reduction r = Reduce(
-        Parameter(Type::NewConstant(js_heap_broker(), constant, zone())));
+    Node* node = Parameter(Type::Constant(value, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(value));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(value));
   }
   TRACED_FOREACH(double, value, kIntegerValues) {
-    Reduction r = Reduce(Parameter(Type::Range(value, value, zone())));
+    Node* node = Parameter(Type::Range(value, value, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsNumberConstant(value));
+    EXPECT_THAT(use_value->InputAt(1), IsNumberConstant(value));
   }
 }
 
 TEST_F(ConstantFoldingReducerTest, ParameterWithUndefined) {
   Handle<HeapObject> undefined = factory()->undefined_value();
   {
-    Reduction r = Reduce(Parameter(Type::Undefined()));
+    Node* node = Parameter(Type::Undefined());
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsHeapConstant(undefined));
+    EXPECT_THAT(use_value->InputAt(1), IsUndefinedConstant());
   }
   {
-    Reduction r = Reduce(
-        Parameter(Type::NewConstant(js_heap_broker(), undefined, zone())));
+    Node* node = Parameter(Type::Constant(broker(), undefined, zone()));
+    Node* use_value = UseValue(node);
+    Reduction r = Reduce(node);
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(), IsHeapConstant(undefined));
+    EXPECT_THAT(use_value->InputAt(1), IsUndefinedConstant());
   }
 }
 
@@ -194,38 +205,44 @@ TEST_F(ConstantFoldingReducerTest, ToBooleanWithFalsish) {
                       Type::Undefined(),
                       Type::Union(
                           Type::Undetectable(),
-                          Type::Union(Type::NewConstant(
-                                          js_heap_broker(),
-                                          factory()->false_value(), zone()),
-                                      Type::Range(0.0, 0.0, zone()), zone()),
+                          Type::Union(
+                              Type::Constant(broker(), broker()->false_value(),
+                                             zone()),
+                              Type::Range(0.0, 0.0, zone()), zone()),
                           zone()),
                       zone()),
                   zone()),
               zone()),
           zone()),
       0);
-  Reduction r = Reduce(graph()->NewNode(simplified()->ToBoolean(), input));
+  Node* node = graph()->NewNode(simplified()->ToBoolean(), input);
+  Node* use_value = UseValue(node);
+  Reduction r = Reduce(node);
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(r.replacement(), IsFalseConstant());
+  EXPECT_THAT(use_value->InputAt(1), IsFalseConstant());
 }
 
 TEST_F(ConstantFoldingReducerTest, ToBooleanWithTruish) {
   Node* input = Parameter(
       Type::Union(
-          Type::NewConstant(js_heap_broker(), factory()->true_value(), zone()),
+          Type::Constant(broker(), broker()->true_value(), zone()),
           Type::Union(Type::DetectableReceiver(), Type::Symbol(), zone()),
           zone()),
       0);
-  Reduction r = Reduce(graph()->NewNode(simplified()->ToBoolean(), input));
+  Node* node = graph()->NewNode(simplified()->ToBoolean(), input);
+  Node* use_value = UseValue(node);
+  Reduction r = Reduce(node);
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(r.replacement(), IsTrueConstant());
+  EXPECT_THAT(use_value->InputAt(1), IsTrueConstant());
 }
 
 TEST_F(ConstantFoldingReducerTest, ToBooleanWithNonZeroPlainNumber) {
   Node* input = Parameter(Type::Range(1, V8_INFINITY, zone()), 0);
-  Reduction r = Reduce(graph()->NewNode(simplified()->ToBoolean(), input));
+  Node* node = graph()->NewNode(simplified()->ToBoolean(), input);
+  Node* use_value = UseValue(node);
+  Reduction r = Reduce(node);
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(r.replacement(), IsTrueConstant());
+  EXPECT_THAT(use_value->InputAt(1), IsTrueConstant());
 }
 
 }  // namespace constant_folding_reducer_unittest

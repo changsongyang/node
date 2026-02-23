@@ -3,12 +3,34 @@
 #ifndef SRC_INSPECTOR_NODE_STRING_H_
 #define SRC_INSPECTOR_NODE_STRING_H_
 
-#include "util.h"
-#include "v8-inspector.h"
-
 #include <cstring>
 #include <sstream>
 #include <string>
+#include "crdtp/protocol_core.h"
+#include "util.h"
+#include "v8-inspector.h"
+
+namespace node::inspector::protocol {
+class Binary;
+}
+
+namespace crdtp {
+
+template <>
+struct ProtocolTypeTraits<std::string> {
+  static bool Deserialize(DeserializerState* state, std::string* value);
+  static void Serialize(const std::string& value, std::vector<uint8_t>* bytes);
+};
+
+template <>
+struct ProtocolTypeTraits<node::inspector::protocol::Binary> {
+  static bool Deserialize(DeserializerState* state,
+                          node::inspector::protocol::Binary* value);
+  static void Serialize(const node::inspector::protocol::Binary& value,
+                        std::vector<uint8_t>* bytes);
+};
+
+}  // namespace crdtp
 
 namespace node {
 namespace inspector {
@@ -18,62 +40,62 @@ class Value;
 
 using String = std::string;
 using StringBuilder = std::ostringstream;
+using ProtocolMessage = std::string;
 
-namespace StringUtil {
-// NOLINTNEXTLINE(runtime/references) This is V8 API...
-inline void builderAppend(StringBuilder& builder, char c) {
-  builder.put(c);
-}
+// Implements StringUtil methods used in `inspector_protocol/lib/`.
+// Refer to
+// https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/v8_inspector_string.h;l=40;drc=2b15d6974a49d3a14d3d67ae099a649d523a828d
+// for more details about the interface.
+struct StringUtil {
+  // Convert Utf16 in local endianness to Utf8 if needed.
+  static String StringViewToUtf8(v8_inspector::StringView view);
+  static String fromUTF16(const uint16_t* data, size_t length);
 
-// NOLINTNEXTLINE(runtime/references)
-inline void builderAppend(StringBuilder& builder, const char* value,
-                          size_t length) {
-  builder.write(value, length);
-}
+  static String fromUTF8(const uint8_t* data, size_t length);
+  static String fromUTF16LE(const uint16_t* data, size_t length);
+  static const uint8_t* CharactersUTF8(const std::string_view s);
+  static size_t CharacterCount(const std::string_view s);
 
-// NOLINTNEXTLINE(runtime/references)
-inline void builderAppend(StringBuilder& builder, const char* value) {
-  builderAppend(builder, value, std::strlen(value));
-}
+  // Unimplemented. The generated code will fall back to CharactersUTF8().
+  inline static uint8_t* CharactersLatin1(const std::string_view s) {
+    return nullptr;
+  }
+  inline static const uint16_t* CharactersUTF16(const std::string_view s) {
+    return nullptr;
+  }
+};
 
-// NOLINTNEXTLINE(runtime/references)
-inline void builderAppend(StringBuilder& builder, const String& string) {
-  builder << string;
-}
+// A read-only sequence of uninterpreted bytes with reference-counted storage.
+class Binary {
+ public:
+  Binary() : bytes_(std::make_shared<std::vector<uint8_t>>()) {}
 
-// NOLINTNEXTLINE(runtime/references)
-inline void builderReserve(StringBuilder& builder, size_t) {
-  // ostringstream does not have a counterpart
-}
-inline String substring(const String& string, size_t start, size_t count) {
-  return string.substr(start, count);
-}
-inline String fromInteger(int n) {
-  return std::to_string(n);
-}
-inline String builderToString(const StringBuilder& builder) {
-  return builder.str();
-}
-inline size_t find(const String& string, const char* substring) {
-  return string.find(substring);
-}
-String fromDouble(double d);
-double toDouble(const char* buffer, size_t length, bool* ok);
+  const uint8_t* data() const { return bytes_->data(); }
+  size_t size() const { return bytes_->size(); }
 
-String StringViewToUtf8(v8_inspector::StringView view);
+  String toBase64() const;
 
-// NOLINTNEXTLINE(runtime/references)
-void builderAppendQuotedString(StringBuilder& builder, const String&);
-std::unique_ptr<Value> parseJSON(const String&);
-std::unique_ptr<Value> parseJSON(v8_inspector::StringView view);
+  static Binary concat(const std::vector<Binary>& binaries);
 
-extern size_t kNotFound;
-}  // namespace StringUtil
+  static Binary fromBase64(const String& base64, bool* success);
+  static Binary fromUint8Array(v8::Local<v8::Uint8Array> data);
+  static Binary fromSpan(const uint8_t* data, size_t size) {
+    return Binary::fromSpan(crdtp::span<uint8_t>(data, size));
+  }
+  static Binary fromSpan(crdtp::span<uint8_t> span) {
+    return Binary(
+        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
+  }
+
+ private:
+  std::shared_ptr<std::vector<uint8_t>> bytes_;
+
+  explicit Binary(std::shared_ptr<std::vector<uint8_t>> bytes)
+      : bytes_(bytes) {}
+};
+
 }  // namespace protocol
 }  // namespace inspector
 }  // namespace node
-
-#define DCHECK CHECK
-#define DCHECK_LT CHECK_LT
 
 #endif  // SRC_INSPECTOR_NODE_STRING_H_

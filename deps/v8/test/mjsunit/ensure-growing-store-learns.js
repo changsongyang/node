@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --noverify-heap --noenable-slow-asserts
-// Flags: --opt --no-always-opt
+// Overwrite the value for --noverify-heap and
+// --noenable-slow-asserts, which the test runner already set to true before.
+//  Due to flag contradiction checking, this requires
+// --allow-overwriting-for-next-flag to avoid an error.
+// Flags: --allow-overwriting-for-next-flag --noverify-heap
+// Flags: --allow-overwriting-for-next-flag --noenable-slow-asserts
+// Flags: --allow-natives-syntax --turbofan
 
 // --noverify-heap and --noenable-slow-asserts are set because the test is too
 // slow with it on.
@@ -18,6 +23,7 @@
     a[i] = 5.3;
   }
 
+  %PrepareFunctionForOptimization(foo);
   foo(a, 1);
   foo(a, 2);
   foo(a, 3);
@@ -26,9 +32,18 @@
   foo(a, 3);
   assertEquals(a[3], 5.3);
   foo(a, 50000);
-  assertUnoptimized(foo);
+  // TODO(v8:11457) We don't currently support inlining element stores if there
+  // is a dictionary mode prototypes on the prototype chain. Therefore, if
+  // v8_dict_property_const_tracking is enabled, the optimized code only
+  // contains a call to the IC handler and doesn't get deopted.
+  if (%IsDictPropertyConstTrackingEnabled()) {
+    assertOptimized(foo);
+  } else {
+    assertUnoptimized(foo);
+  }
   assertTrue(%HasDictionaryElements(a));
 
+  %PrepareFunctionForOptimization(foo);
   var b = [];
   foo(b, 1);
   foo(b, 2);
@@ -36,13 +51,12 @@
   b[10000] = 5;
   assertTrue(%HasDictionaryElements(b));
   foo(b, 3);
+  %PrepareFunctionForOptimization(foo);
   %OptimizeFunctionOnNextCall(foo);
   foo(b, 50000);
   assertOptimized(foo);
   assertTrue(%HasDictionaryElements(b));
 
-  // Clearing feedback for the StoreIC in foo is important for runs with
-  // flag --stress-opt.
   %ClearFunctionFeedback(foo);
 })();
 
@@ -55,6 +69,7 @@
   }
 
   // The KeyedStoreIC will learn GROW_MODE.
+  %PrepareFunctionForOptimization(foo2);
   foo2(a, 10);
   foo2(a, 12);
   foo2(a, 31);

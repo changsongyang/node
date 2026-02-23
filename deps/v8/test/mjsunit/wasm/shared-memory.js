@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-threads
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function assertMemoryIsValid(memory, shared) {
   assertSame(WebAssembly.Memory.prototype, memory.__proto__);
@@ -67,22 +64,6 @@ function assertMemoryIsValid(memory, shared) {
        WebAssembly.CompileError);
 })();
 
-(function TestCompileAtomicOpUndefinedShared() {
-  print("TestCompileAtomicOpUndefinedShared");
-  let memory = new WebAssembly.Memory({
-    initial: 0, maximum: 10, shared: true});
-  let builder = new WasmModuleBuilder();
-  builder.addFunction("main", kSig_i_ii)
-    .addBody([
-      kExprGetLocal, 0,
-      kExprGetLocal, 1,
-      kAtomicPrefix,
-      kExprI32AtomicAdd]);
-  builder.addImportedMemory("m", "imported_mem");
-  assertThrows(() => new WebAssembly.Module(builder.toBuffer()),
-       WebAssembly.CompileError);
-})();
-
 (function TestInstantiateWithUndefinedShared() {
   print("TestInstantiateWithUndefinedShared");
   let memory = new WebAssembly.Memory({
@@ -108,7 +89,8 @@ function assertMemoryIsValid(memory, shared) {
 (function TestInstantiateWithSharedDefined() {
   print("TestInstantiateWithSharedDefined");
   let builder = new WasmModuleBuilder();
-  builder.addMemory(2, 10, true, "shared");
+  builder.addMemory(2, 10, "shared");
+  builder.exportMemoryAs("memory");
   let module = new WebAssembly.Module(builder.toBuffer());
   let instance = new WebAssembly.Instance(module);
   assertMemoryIsValid(instance.exports.memory, true);
@@ -117,11 +99,11 @@ function assertMemoryIsValid(memory, shared) {
 (function TestAtomicOpWithSharedMemoryDefined() {
   print("TestAtomicOpWithSharedMemoryDefined");
   let builder = new WasmModuleBuilder();
-  builder.addMemory(2, 10, false, "shared");
+  builder.addMemory(2, 10, "shared");
   builder.addFunction("main", kSig_i_ii)
     .addBody([
-      kExprGetLocal, 0,
-      kExprGetLocal, 1,
+      kExprLocalGet, 0,
+      kExprLocalGet, 1,
       kAtomicPrefix,
       kExprI32AtomicAdd, 2, 0])
     .exportFunc();
@@ -129,4 +111,18 @@ function assertMemoryIsValid(memory, shared) {
   let instance = new WebAssembly.Instance(module);
   assertEquals(0, instance.exports.main(0, 0x11111111));
   assertEquals(0x11111111, instance.exports.main(0, 0x11111111));
+})();
+
+(function TestMemoryConstructorShouldNotCallHasProperty() {
+  print(arguments.callee.name);
+  // from test/wasm-js/data/test/js-api/memory/constructor.any.js
+  const proxy = new Proxy({}, {
+    has(o, x) {
+      throw new Error(`Should not call [[HasProperty]] with ${x}`);
+    },
+    get(o, x) {
+      return x === 'address' ? 'i32' : 0;
+    },
+  });
+  new WebAssembly.Memory(proxy);
 })();

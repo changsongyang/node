@@ -6,17 +6,22 @@
 .type	sha256_multi_block,@function
 .align	32
 sha256_multi_block:
+.cfi_startproc	
 	movq	OPENSSL_ia32cap_P+4(%rip),%rcx
 	btq	$61,%rcx
 	jc	_shaext_shortcut
 	testl	$268435456,%ecx
 	jnz	_avx_shortcut
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	subq	$288,%rsp
 	andq	$-256,%rsp
 	movq	%rax,272(%rsp)
+.cfi_escape	0x0f,0x06,0x77,0x90,0x02,0x06,0x23,0x08
 .Lbody:
 	leaq	K256+128(%rip),%rbp
 	leaq	256(%rsp),%rbx
@@ -25,28 +30,36 @@ sha256_multi_block:
 .Loop_grande:
 	movl	%edx,280(%rsp)
 	xorl	%edx,%edx
+
 	movq	0(%rsi),%r8
+
 	movl	8(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,0(%rbx)
 	cmovleq	%rbp,%r8
+
 	movq	16(%rsi),%r9
+
 	movl	24(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,4(%rbx)
 	cmovleq	%rbp,%r9
+
 	movq	32(%rsi),%r10
+
 	movl	40(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,8(%rbx)
 	cmovleq	%rbp,%r10
+
 	movq	48(%rsi),%r11
+
 	movl	56(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
@@ -2615,19 +2628,28 @@ sha256_multi_block:
 
 .Ldone:
 	movq	272(%rsp),%rax
+.cfi_def_cfa	%rax,8
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lepilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	sha256_multi_block,.-sha256_multi_block
 .type	sha256_multi_block_shaext,@function
 .align	32
 sha256_multi_block_shaext:
+.cfi_startproc	
 _shaext_shortcut:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	subq	$288,%rsp
 	shll	$1,%edx
 	andq	$-256,%rsp
@@ -2640,14 +2662,18 @@ _shaext_shortcut:
 .Loop_grande_shaext:
 	movl	%edx,280(%rsp)
 	xorl	%edx,%edx
+
 	movq	0(%rsi),%r8
+
 	movl	8(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,0(%rbx)
 	cmovleq	%rsp,%r8
+
 	movq	16(%rsi),%r9
+
 	movl	24(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
@@ -3102,14 +3128,19 @@ _shaext_shortcut:
 .Ldone_shaext:
 
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lepilogue_shaext:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	sha256_multi_block_shaext,.-sha256_multi_block_shaext
 .type	sha256_multi_block_avx,@function
 .align	32
 sha256_multi_block_avx:
+.cfi_startproc	
 _avx_shortcut:
 	shrq	$32,%rcx
 	cmpl	$2,%edx
@@ -3120,11 +3151,15 @@ _avx_shortcut:
 .align	32
 .Lavx:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	subq	$288,%rsp
 	andq	$-256,%rsp
 	movq	%rax,272(%rsp)
+.cfi_escape	0x0f,0x06,0x77,0x90,0x02,0x06,0x23,0x08
 .Lbody_avx:
 	leaq	K256+128(%rip),%rbp
 	leaq	256(%rsp),%rbx
@@ -3133,28 +3168,36 @@ _avx_shortcut:
 .Loop_grande_avx:
 	movl	%edx,280(%rsp)
 	xorl	%edx,%edx
+
 	movq	0(%rsi),%r8
+
 	movl	8(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,0(%rbx)
 	cmovleq	%rbp,%r8
+
 	movq	16(%rsi),%r9
+
 	movl	24(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,4(%rbx)
 	cmovleq	%rbp,%r9
+
 	movq	32(%rsi),%r10
+
 	movl	40(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,8(%rbx)
 	cmovleq	%rbp,%r10
+
 	movq	48(%rsi),%r11
+
 	movl	56(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
@@ -5353,27 +5396,41 @@ _avx_shortcut:
 
 .Ldone_avx:
 	movq	272(%rsp),%rax
+.cfi_def_cfa	%rax,8
 	vzeroupper
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lepilogue_avx:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	sha256_multi_block_avx,.-sha256_multi_block_avx
 .type	sha256_multi_block_avx2,@function
 .align	32
 sha256_multi_block_avx2:
+.cfi_startproc	
 _avx2_shortcut:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 	subq	$576,%rsp
 	andq	$-256,%rsp
 	movq	%rax,544(%rsp)
+.cfi_escape	0x0f,0x06,0x77,0xa0,0x04,0x06,0x23,0x08
 .Lbody_avx2:
 	leaq	K256+128(%rip),%rbp
 	leaq	128(%rdi),%rdi
@@ -5382,56 +5439,72 @@ _avx2_shortcut:
 	movl	%edx,552(%rsp)
 	xorl	%edx,%edx
 	leaq	512(%rsp),%rbx
+
 	movq	0(%rsi),%r12
+
 	movl	8(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,0(%rbx)
 	cmovleq	%rbp,%r12
+
 	movq	16(%rsi),%r13
+
 	movl	24(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,4(%rbx)
 	cmovleq	%rbp,%r13
+
 	movq	32(%rsi),%r14
+
 	movl	40(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,8(%rbx)
 	cmovleq	%rbp,%r14
+
 	movq	48(%rsi),%r15
+
 	movl	56(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,12(%rbx)
 	cmovleq	%rbp,%r15
+
 	movq	64(%rsi),%r8
+
 	movl	72(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,16(%rbx)
 	cmovleq	%rbp,%r8
+
 	movq	80(%rsi),%r9
+
 	movl	88(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,20(%rbx)
 	cmovleq	%rbp,%r9
+
 	movq	96(%rsi),%r10
+
 	movl	104(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
 	movl	%ecx,24(%rbx)
 	cmovleq	%rbp,%r10
+
 	movq	112(%rsi),%r11
+
 	movl	120(%rsi),%ecx
 	cmpl	%edx,%ecx
 	cmovgl	%ecx,%edx
@@ -7738,17 +7811,27 @@ _avx2_shortcut:
 
 .Ldone_avx2:
 	movq	544(%rsp),%rax
+.cfi_def_cfa	%rax,8
 	vzeroupper
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lepilogue_avx2:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	sha256_multi_block_avx2,.-sha256_multi_block_avx2
+.section	.rodata
 .align	256
 K256:
 .long	1116352408,1116352408,1116352408,1116352408
@@ -7900,3 +7983,25 @@ K256_shaext:
 .long	0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208
 .long	0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 .byte	83,72,65,50,53,54,32,109,117,108,116,105,45,98,108,111,99,107,32,116,114,97,110,115,102,111,114,109,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
+.previous	
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

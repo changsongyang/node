@@ -21,17 +21,9 @@ Data types
 
     Union of all request types.
 
+.. c:enum:: uv_req_type
 
-Public members
-^^^^^^^^^^^^^^
-
-.. c:member:: void* uv_req_t.data
-
-    Space for user-defined arbitrary data. libuv does not use this field.
-
-.. c:member:: uv_req_type uv_req_t.type
-
-    Indicated the type of request. Readonly.
+    The kind of the libuv request.
 
     ::
 
@@ -50,10 +42,22 @@ Public members
         } uv_req_type;
 
 
+Public members
+^^^^^^^^^^^^^^
+
+.. c:member:: void* uv_req_t.data
+
+    Space for user-defined arbitrary data. libuv does not use this field.
+
+.. c:member:: uv_req_type uv_req_t.type
+
+    The :c:enum:`uv_req_type`, indicating the type of the request. Readonly.
+
+
 API
 ---
 
-.. c:function:: UV_REQ_TYPE_MAP(iter_macro)
+.. c:macro:: UV_REQ_TYPE_MAP(iter_macro)
 
     Macro that expands to a series of invocations of `iter_macro` for
     each of the request types. `iter_macro` is invoked with two
@@ -69,8 +73,8 @@ API
     Returns 0 on success, or an error code < 0 on failure.
 
     Only cancellation of :c:type:`uv_fs_t`, :c:type:`uv_getaddrinfo_t`,
-    :c:type:`uv_getnameinfo_t` and :c:type:`uv_work_t` requests is
-    currently supported.
+    :c:type:`uv_getnameinfo_t`, :c:type:`uv_random_t` and :c:type:`uv_work_t`
+    requests is currently supported.
 
     Cancelled requests have their callbacks invoked some time in the future.
     It's **not** safe to free the memory associated with the request until the
@@ -80,8 +84,9 @@ API
 
     * A :c:type:`uv_fs_t` request has its req->result field set to `UV_ECANCELED`.
 
-    * A :c:type:`uv_work_t`, :c:type:`uv_getaddrinfo_t` or c:type:`uv_getnameinfo_t`
-      request has its callback invoked with status == `UV_ECANCELED`.
+    * A :c:type:`uv_work_t`, :c:type:`uv_getaddrinfo_t`,
+      :c:type:`uv_getnameinfo_t` or :c:type:`uv_random_t` request has its
+      callback invoked with status == `UV_ECANCELED`.
 
 .. c:function:: size_t uv_req_size(uv_req_type type)
 
@@ -94,7 +99,7 @@ API
 
     .. versionadded:: 1.19.0
 
-.. c:function:: void* uv_req_set_data(uv_req_t* req, void* data)
+.. c:function:: void uv_req_set_data(uv_req_t* req, void* data)
 
     Sets `req->data` to `data`.
 

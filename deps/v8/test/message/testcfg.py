@@ -35,31 +35,17 @@ from testrunner.outproc import message
 
 
 INVALID_FLAGS = ["--enable-slow-asserts"]
-MODULE_PATTERN = re.compile(r"^// MODULE$", flags=re.MULTILINE)
 
 
 class TestSuite(testsuite.TestSuite):
-  def ListTests(self):
-    tests = []
-    for dirname, dirs, files in os.walk(self.root):
-      for dotted in [x for x in dirs if x.startswith('.')]:
-        dirs.remove(dotted)
-      dirs.sort()
-      files.sort()
-      for filename in files:
-        if filename.endswith(".js"):
-          fullpath = os.path.join(dirname, filename)
-          relpath = fullpath[len(self.root) + 1 : -3]
-          testname = relpath.replace(os.path.sep, "/")
-          test = self._create_test(testname)
-          tests.append(test)
-    return tests
+  def _test_loader_class(self):
+    return testsuite.JSTestLoader
 
   def _test_class(self):
     return TestCase
 
 
-class TestCase(testcase.TestCase):
+class TestCase(testcase.D8TestCase):
   def __init__(self, *args, **kwargs):
     super(TestCase, self).__init__(*args, **kwargs)
 
@@ -68,11 +54,7 @@ class TestCase(testcase.TestCase):
     self._source_flags = self._parse_source_flags(source)
 
   def _parse_source_files(self, source):
-    files = []
-    if MODULE_PATTERN.search(source):
-      files.append("--module")
-    files.append(os.path.join(self.suite.root, self.path + ".js"))
-    return files
+    return [self._get_source_path()]
 
   def _expected_fail(self):
     path = self.path
@@ -94,14 +76,23 @@ class TestCase(testcase.TestCase):
     return self._source_flags
 
   def _get_source_path(self):
-    return os.path.join(self.suite.root, self.path + self._get_suffix())
+    # Try .js first, and fall back to .mjs.
+    # TODO(v8:9406): clean this up by never separating the path from
+    # the extension in the first place.
+    js_path = self.suite.root / self.path_js
+    if js_path.exists():
+      return js_path
+    return self.suite.root / self.path_mjs
+
+  def skip_predictable(self):
+    # Message tests expected to fail don't print allocation output for
+    # predictable testing.
+    return super(TestCase, self).skip_predictable() or self._expected_fail()
 
   @property
   def output_proc(self):
     return message.OutProc(self.expected_outcomes,
-                           os.path.join(self.suite.root, self.path),
-                           self._expected_fail())
-
-
-def GetSuite(*args, **kwargs):
-  return TestSuite(*args, **kwargs)
+                           self.suite.root / self.path,
+                           self._expected_fail(),
+                           self.suite.root / self.path_and_suffix('.out'),
+                           self.test_config.regenerate_expected_files)

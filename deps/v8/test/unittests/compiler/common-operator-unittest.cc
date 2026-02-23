@@ -62,8 +62,6 @@ class CommonSharedOperatorTest
     : public TestWithZone,
       public ::testing::WithParamInterface<SharedOperator> {};
 
-}  // namespace
-
 
 TEST_P(CommonSharedOperatorTest, InstancesAreGloballyShared) {
   const SharedOperator& sop = GetParam();
@@ -106,10 +104,8 @@ TEST_P(CommonSharedOperatorTest, Properties) {
   EXPECT_EQ(sop.properties, op->properties());
 }
 
-
-INSTANTIATE_TEST_CASE_P(CommonOperatorTest, CommonSharedOperatorTest,
-                        ::testing::ValuesIn(kSharedOperators));
-
+INSTANTIATE_TEST_SUITE_P(CommonOperatorTest, CommonSharedOperatorTest,
+                         ::testing::ValuesIn(kSharedOperators));
 
 // -----------------------------------------------------------------------------
 // Other operators.
@@ -120,7 +116,7 @@ namespace {
 class CommonOperatorTest : public TestWithZone {
  public:
   CommonOperatorTest() : common_(zone()) {}
-  ~CommonOperatorTest() override {}
+  ~CommonOperatorTest() override = default;
 
   CommonOperatorBuilder* common() { return &common_; }
 
@@ -252,6 +248,12 @@ TEST_F(CommonOperatorTest, IfValue) {
       EXPECT_EQ(1, op->ControlOutputCount());
     }
   }
+
+  // Specific test for a regression in the IfValueParameters operator==.
+  CHECK(!(IfValueParameters(0, 0) == IfValueParameters(1, 0)));
+  CHECK(!(IfValueParameters(0, 0) == IfValueParameters(0, 1)));
+  CHECK(!(IfValueParameters(0, 1, BranchHint::kFalse) ==
+          IfValueParameters(0, 1, BranchHint::kTrue)));
 }
 
 
@@ -296,7 +298,7 @@ TEST_F(CommonOperatorTest, Float32Constant) {
     TRACED_FOREACH(float, v2, kFloatValues) {
       const Operator* op1 = common()->Float32Constant(v1);
       const Operator* op2 = common()->Float32Constant(v2);
-      EXPECT_EQ(bit_cast<uint32_t>(v1) == bit_cast<uint32_t>(v2),
+      EXPECT_EQ(base::bit_cast<uint32_t>(v1) == base::bit_cast<uint32_t>(v2),
                 op1->Equals(op2));
     }
   }
@@ -306,7 +308,8 @@ TEST_F(CommonOperatorTest, Float32Constant) {
 TEST_F(CommonOperatorTest, Float64Constant) {
   TRACED_FOREACH(double, value, kFloatValues) {
     const Operator* op = common()->Float64Constant(value);
-    EXPECT_PRED2(base::bit_equal_to<double>(), value, OpParameter<double>(op));
+    EXPECT_PRED2(base::bit_equal_to<double>(), value,
+                 OpParameter<Float64>(op).get_scalar());
     EXPECT_EQ(0, op->ValueInputCount());
     EXPECT_EQ(0, OperatorProperties::GetTotalInputCount(op));
     EXPECT_EQ(0, op->ControlOutputCount());
@@ -317,7 +320,7 @@ TEST_F(CommonOperatorTest, Float64Constant) {
     TRACED_FOREACH(double, v2, kFloatValues) {
       const Operator* op1 = common()->Float64Constant(v1);
       const Operator* op2 = common()->Float64Constant(v2);
-      EXPECT_EQ(bit_cast<uint64_t>(v1) == bit_cast<uint64_t>(v2),
+      EXPECT_EQ(base::bit_cast<uint64_t>(v1) == base::bit_cast<uint64_t>(v2),
                 op1->Equals(op2));
     }
   }
@@ -338,7 +341,7 @@ TEST_F(CommonOperatorTest, NumberConstant) {
     TRACED_FOREACH(double, v2, kFloatValues) {
       const Operator* op1 = common()->NumberConstant(v1);
       const Operator* op2 = common()->NumberConstant(v2);
-      EXPECT_EQ(bit_cast<uint64_t>(v1) == bit_cast<uint64_t>(v2),
+      EXPECT_EQ(base::bit_cast<uint64_t>(v1) == base::bit_cast<uint64_t>(v2),
                 op1->Equals(op2));
     }
   }
@@ -389,6 +392,7 @@ TEST_F(CommonOperatorTest, Projection) {
   }
 }
 
+}  // namespace
 }  // namespace common_operator_unittest
 }  // namespace compiler
 }  // namespace internal

@@ -19,7 +19,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Flags: --expose_internals
+// Flags: --expose-internals
 'use strict';
 const common = require('../common');
 
@@ -27,17 +27,17 @@ const fixtures = require('../common/fixtures');
 
 const assert = require('assert');
 const fs = require('fs');
-const path = require('path');
 
-const O_APPEND = fs.constants.O_APPEND || 0;
-const O_CREAT = fs.constants.O_CREAT || 0;
-const O_EXCL = fs.constants.O_EXCL || 0;
-const O_RDONLY = fs.constants.O_RDONLY || 0;
-const O_RDWR = fs.constants.O_RDWR || 0;
-const O_SYNC = fs.constants.O_SYNC || 0;
-const O_DSYNC = fs.constants.O_DSYNC || 0;
-const O_TRUNC = fs.constants.O_TRUNC || 0;
-const O_WRONLY = fs.constants.O_WRONLY || 0;
+// 0 if not found in fs.constants
+const { O_APPEND = 0,
+        O_CREAT = 0,
+        O_EXCL = 0,
+        O_RDONLY = 0,
+        O_RDWR = 0,
+        O_SYNC = 0,
+        O_DSYNC = 0,
+        O_TRUNC = 0,
+        O_WRONLY = 0 } = fs.constants;
 
 const { stringToFlags } = require('internal/fs/utils');
 
@@ -63,34 +63,31 @@ assert.strictEqual(stringToFlags('xa+'), O_APPEND | O_CREAT | O_RDWR | O_EXCL);
 assert.strictEqual(stringToFlags('as+'), O_APPEND | O_CREAT | O_RDWR | O_SYNC);
 assert.strictEqual(stringToFlags('sa+'), O_APPEND | O_CREAT | O_RDWR | O_SYNC);
 
-('+ +a +r +w rw wa war raw r++ a++ w++ x +x x+ rx rx+ wxx wax xwx xxx')
-  .split(' ')
+['+', '+a', '+r', '+w', 'rw', 'wa', 'war', 'raw', 'r++', 'a++', 'w++', 'x', '+x',
+ 'x+', 'rx', 'rx+', 'wxx', 'wax', 'xwx', 'xxx']
   .forEach(function(flags) {
-    common.expectsError(
+    assert.throws(
       () => stringToFlags(flags),
-      { code: 'ERR_INVALID_OPT_VALUE', type: TypeError }
+      { code: 'ERR_INVALID_ARG_VALUE', name: 'TypeError' }
     );
   });
 
-common.expectsError(
+assert.throws(
   () => stringToFlags({}),
-  { code: 'ERR_INVALID_OPT_VALUE', type: TypeError }
+  { code: 'ERR_INVALID_ARG_VALUE', name: 'TypeError' }
 );
 
-common.expectsError(
+assert.throws(
   () => stringToFlags(true),
-  { code: 'ERR_INVALID_OPT_VALUE', type: TypeError }
+  { code: 'ERR_INVALID_ARG_VALUE', name: 'TypeError' }
 );
 
-common.expectsError(
-  () => stringToFlags(null),
-  { code: 'ERR_INVALID_OPT_VALUE', type: TypeError }
-);
-
-if (common.isLinux || common.isOSX) {
+if (common.isLinux || common.isMacOS) {
   const tmpdir = require('../common/tmpdir');
   tmpdir.refresh();
-  const file = path.join(tmpdir.path, 'a.js');
+  const file = tmpdir.resolve('a.js');
   fs.copyFileSync(fixtures.path('a.js'), file);
-  fs.open(file, O_DSYNC, common.mustCall(assert.ifError));
+  fs.open(file, O_DSYNC, common.mustSucceed((fd) => {
+    fs.closeSync(fd);
+  }));
 }

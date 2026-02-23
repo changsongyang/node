@@ -1,4 +1,3 @@
-
 // Copyright 2013 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -26,20 +25,26 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --nostress-opt --allow-natives-syntax
-var maxSize = %_MaxSmi() + 1;
-function TestArray(constr) {
-  assertThrows(function() {
-    new constr(maxSize);
-  }, RangeError);
+// Flags: --allow-natives-syntax --mock-arraybuffer-allocator
+
+let kArrayBufferByteLengthLimit = %ArrayBufferMaxByteLength() + 1;
+
+function TestArray(constr, elementSize) {
+  assertEquals(elementSize, constr.BYTES_PER_ELEMENT);
+  let ta_limit = Math.ceil(kArrayBufferByteLengthLimit / elementSize);
+
+  assertThrows(() => new constr(ta_limit), RangeError);
+
+  // This one must succeed.
+  new constr(ta_limit - 1);
 }
 
-TestArray(Uint8Array);
-TestArray(Int8Array);
-TestArray(Uint16Array);
-TestArray(Int16Array);
-TestArray(Uint32Array);
-TestArray(Int32Array);
-TestArray(Float32Array);
-TestArray(Float64Array);
-TestArray(Uint8ClampedArray);
+TestArray(Uint8Array, 1);
+TestArray(Int8Array, 1);
+TestArray(Uint16Array, 2);
+TestArray(Int16Array, 2);
+TestArray(Uint32Array, 4);
+TestArray(Int32Array, 4);
+TestArray(Float32Array, 4);
+TestArray(Float64Array, 8);
+TestArray(Uint8ClampedArray, 1);

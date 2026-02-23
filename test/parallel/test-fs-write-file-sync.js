@@ -21,78 +21,118 @@
 
 'use strict';
 const common = require('../common');
+const { isMainThread } = require('worker_threads');
+
+if (!isMainThread) {
+  common.skip('Setting process.umask is not supported in Workers');
+}
+
 const assert = require('assert');
-const path = require('path');
 const fs = require('fs');
-let openCount = 0;
-let mode;
-let content;
-
-if (!common.isMainThread)
-  common.skip('process.umask is not available in Workers');
-
-// Need to hijack fs.open/close to make sure that things
-// get closed once they're opened.
-fs._openSync = fs.openSync;
-fs.openSync = openSync;
-fs._closeSync = fs.closeSync;
-fs.closeSync = closeSync;
-
-// Reset the umask for testing
-process.umask(0o000);
 
 // On Windows chmod is only able to manipulate read-only bit. Test if creating
 // the file in read-only mode works.
-if (common.isWindows) {
-  mode = 0o444;
-} else {
-  mode = 0o755;
-}
+const mode = common.isWindows ? 0o444 : 0o755;
+
+// Reset the umask for testing
+process.umask(0o000);
 
 const tmpdir = require('../common/tmpdir');
 tmpdir.refresh();
 
 // Test writeFileSync
-const file1 = path.join(tmpdir.path, 'testWriteFileSync.txt');
+{
+  const file = tmpdir.resolve('testWriteFileSync.txt');
 
-fs.writeFileSync(file1, '123', { mode });
-
-content = fs.readFileSync(file1, { encoding: 'utf8' });
-assert.strictEqual(content, '123');
-
-assert.strictEqual(fs.statSync(file1).mode & 0o777, mode);
-
-// Test appendFileSync
-const file2 = path.join(tmpdir.path, 'testAppendFileSync.txt');
-
-fs.appendFileSync(file2, 'abc', { mode });
-
-content = fs.readFileSync(file2, { encoding: 'utf8' });
-assert.strictEqual(content, 'abc');
-
-assert.strictEqual(fs.statSync(file2).mode & mode, mode);
-
-// Test writeFileSync with file descriptor
-const file3 = path.join(tmpdir.path, 'testWriteFileSyncFd.txt');
-
-const fd = fs.openSync(file3, 'w+', mode);
-fs.writeFileSync(fd, '123');
-fs.closeSync(fd);
-
-content = fs.readFileSync(file3, { encoding: 'utf8' });
-assert.strictEqual(content, '123');
-
-assert.strictEqual(fs.statSync(file3).mode & 0o777, mode);
-
-// Verify that all opened files were closed.
-assert.strictEqual(openCount, 0);
-
-function openSync() {
-  openCount++;
-  return fs._openSync.apply(fs, arguments);
+  fs.writeFileSync(file, '123', { mode });
+  const content = fs.readFileSync(file, { encoding: 'utf8' });
+  assert.strictEqual(content, '123');
+  assert.strictEqual(fs.statSync(file).mode & 0o777, mode);
 }
 
-function closeSync() {
-  openCount--;
-  return fs._closeSync.apply(fs, arguments);
+// Test appendFileSync
+{
+  const file = tmpdir.resolve('testAppendFileSync.txt');
+
+  fs.appendFileSync(file, 'abc', { mode });
+  const content = fs.readFileSync(file, { encoding: 'utf8' });
+  assert.strictEqual(content, 'abc');
+  assert.strictEqual(fs.statSync(file).mode & mode, mode);
+}
+
+// Test writeFileSync with file descriptor
+{
+  // Need to hijack fs.open/close to make sure that things
+  // get closed once they're opened.
+  const _openSync = fs.openSync;
+  const _closeSync = fs.closeSync;
+  let openCount = 0;
+
+  fs.openSync = (...args) => {
+    openCount++;
+    return _openSync(...args);
+  };
+
+  fs.closeSync = (...args) => {
+    openCount--;
+    return _closeSync(...args);
+  };
+
+  const file = tmpdir.resolve('testWriteFileSyncFd.txt');
+  const fd = fs.openSync(file, 'w+', mode);
+
+  fs.writeFileSync(fd, '123');
+  fs.closeSync(fd);
+  const content = fs.readFileSync(file, { encoding: 'utf8' });
+  assert.strictEqual(content, '123');
+  assert.strictEqual(fs.statSync(file).mode & 0o777, mode);
+
+  // Verify that all opened files were closed.
+  assert.strictEqual(openCount, 0);
+  fs.openSync = _openSync;
+  fs.closeSync = _closeSync;
+}
+
+// Test writeFileSync with flags
+{
+  const file = tmpdir.resolve('testWriteFileSyncFlags.txt');
+
+  fs.writeFileSync(file, 'hello ', { encoding: 'utf8', flag: 'a' });
+  fs.writeFileSync(file, 'world!', { encoding: 'utf8', flag: 'a' });
+  const content = fs.readFileSync(file, { encoding: 'utf8' });
+  assert.strictEqual(content, 'hello world!');
+}
+
+// Test writeFileSync with no flags
+{
+  const utf8Data = 'hello world!';
+  for (const test of [
+    { data: utf8Data },
+    { data: utf8Data, options: { encoding: 'utf8' } },
+    { data: Buffer.from(utf8Data, 'utf8').toString('hex'), options: { encoding: 'hex' } },
+  ]) {
+    const file = tmpdir.resolve(`testWriteFileSyncNewFile_${Math.random()}.txt`);
+    fs.writeFileSync(file, test.data, test.options);
+
+    const content = fs.readFileSync(file, { encoding: 'utf-8' });
+    assert.strictEqual(content, utf8Data);
+  }
+}
+
+// Test writeFileSync with an invalid input
+{
+  const file = tmpdir.resolve('testWriteFileSyncInvalid.txt');
+  for (const data of [
+    false, 5, {}, [], null, undefined, true, 5n, () => {}, Symbol(), new Map(),
+    new String('notPrimitive'),
+    { [Symbol.toPrimitive]: (hint) => 'amObject' },
+    { toString() { return 'amObject'; } },
+    Promise.resolve('amPromise'),
+    common.mustNotCall(),
+  ]) {
+    assert.throws(
+      () => fs.writeFileSync(file, data, { encoding: 'utf8', flag: 'a' }),
+      { code: 'ERR_INVALID_ARG_TYPE' }
+    );
+  }
 }

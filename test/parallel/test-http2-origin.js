@@ -9,11 +9,7 @@ const {
 if (!hasCrypto)
   skip('missing crypto');
 
-const {
-  deepStrictEqual,
-  strictEqual,
-  throws
-} = require('assert');
+const assert = require('assert');
 const {
   createSecureServer,
   createServer,
@@ -21,11 +17,11 @@ const {
 } = require('http2');
 const Countdown = require('../common/countdown');
 
-const { readKey } = require('../common/fixtures');
+const fixtures = require('../common/fixtures');
 
-const key = readKey('agent8-key.pem', 'binary');
-const cert = readKey('agent8-cert.pem', 'binary');
-const ca = readKey('fake-startcom-root-cert.pem', 'binary');
+const key = fixtures.readKey('agent8-key.pem', 'binary');
+const cert = fixtures.readKey('agent8-cert.pem', 'binary');
+const ca = fixtures.readKey('fake-startcom-root-cert.pem', 'binary');
 
 {
   const server = createSecureServer({ key, cert });
@@ -42,34 +38,42 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
     session.origin();
 
     [0, true, {}, []].forEach((input) => {
-      throws(
+      assert.throws(
         () => session.origin(input),
         {
           code: 'ERR_INVALID_ARG_TYPE',
-          name: 'TypeError [ERR_INVALID_ARG_TYPE]'
+          name: 'TypeError'
         }
       );
     });
 
     [new URL('foo://bar'), 'foo://bar'].forEach((input) => {
-      throws(
+      assert.throws(
         () => session.origin(input),
         {
           code: 'ERR_HTTP2_INVALID_ORIGIN',
-          name: 'TypeError [ERR_HTTP2_INVALID_ORIGIN]'
+          name: 'TypeError'
         }
       );
     });
 
     ['not a valid url'].forEach((input) => {
-      throws(
+      assert.throws(
         () => session.origin(input),
         {
           code: 'ERR_INVALID_URL',
-          name: 'TypeError [ERR_INVALID_URL]'
+          name: 'TypeError'
         }
       );
     });
+    const longInput = `http://foo.bar${'a'.repeat(16383)}`;
+    assert.throws(
+      () => session.origin(longInput),
+      {
+        code: 'ERR_HTTP2_ORIGIN_LENGTH',
+        name: 'TypeError'
+      }
+    );
   }));
 
   server.listen(0, mustCall(() => {
@@ -77,10 +81,10 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
     const client = connect(originSet[0], { ca });
     const checks = [
       ['https://foo.org', 'https://bar.org'],
-      ['https://example.org', 'https://example.com']
+      ['https://example.org', 'https://example.com'],
     ];
 
-    const countdown = new Countdown(2, () => {
+    const countdown = new Countdown(3, () => {
       client.close();
       server.close();
     });
@@ -88,18 +92,18 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
     client.on('origin', mustCall((origins) => {
       const check = checks.shift();
       originSet.push(...check);
-      deepStrictEqual(originSet, client.originSet);
-      deepStrictEqual(origins, check);
+      assert.deepStrictEqual(client.originSet, originSet);
+      assert.deepStrictEqual(origins, check);
       countdown.dec();
     }, 2));
 
-    client.request().on('close', mustCall()).resume();
+    client.request().on('close', mustCall(() => countdown.dec())).resume();
   }));
 }
 
 // Test automatically sending origin on connection start
 {
-  const origins = [ 'https://foo.org/a/b/c', 'https://bar.org' ];
+  const origins = ['https://foo.org/a/b/c', 'https://bar.org'];
   const server = createSecureServer({ key, cert, origins });
   server.on('stream', mustCall((stream) => {
     stream.respond();
@@ -111,15 +115,19 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
     const originSet = [`https://localhost:${server.address().port}`];
     const client = connect(originSet[0], { ca });
 
-    client.on('origin', mustCall((origins) => {
-      originSet.push(...check);
-      deepStrictEqual(originSet, client.originSet);
-      deepStrictEqual(origins, check);
+    const countdown = new Countdown(2, () => {
       client.close();
       server.close();
+    });
+
+    client.on('origin', mustCall((origins) => {
+      originSet.push(...check);
+      assert.deepStrictEqual(client.originSet, originSet);
+      assert.deepStrictEqual(origins, check);
+      countdown.dec();
     }));
 
-    client.request().on('close', mustCall()).resume();
+    client.request().on('close', mustCall(() => countdown.dec())).resume();
   }));
 }
 
@@ -140,11 +148,11 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
     const client = connect(origin, { ca });
 
     client.on('origin', mustCall((origins) => {
-      deepStrictEqual([origin, 'https://foo.org'], client.originSet);
+      assert.deepStrictEqual(client.originSet, [origin, 'https://foo.org']);
       const req = client.request({ ':authority': 'foo.org' });
       req.on('response', mustCall((headers) => {
-        strictEqual(421, headers[':status']);
-        deepStrictEqual([origin], client.originSet);
+        assert.strictEqual(headers[':status'], 421);
+        assert.deepStrictEqual(client.originSet, [origin]);
       }));
       req.resume();
       req.on('close', mustCall(() => {
@@ -168,7 +176,7 @@ const ca = readKey('fake-startcom-root-cert.pem', 'binary');
   server.listen(0, mustCall(() => {
     const client = connect(`http://localhost:${server.address().port}`);
     client.on('origin', mustNotCall());
-    strictEqual(client.originSet, undefined);
+    assert.strictEqual(client.originSet, undefined);
     const req = client.request();
     req.resume();
     req.on('close', mustCall(() => {

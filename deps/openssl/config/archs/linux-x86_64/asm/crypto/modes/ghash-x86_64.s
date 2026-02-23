@@ -5,9 +5,28 @@
 .type	gcm_gmult_4bit,@function
 .align	16
 gcm_gmult_4bit:
+.cfi_startproc	
+.byte	243,15,30,250
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
+	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
+	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
+	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
+	subq	$280,%rsp
+.cfi_adjust_cfa_offset	280
 .Lgmult_prologue:
 
 	movzbq	15(%rdi),%r8
@@ -84,22 +103,42 @@ gcm_gmult_4bit:
 	movq	%r8,8(%rdi)
 	movq	%r9,(%rdi)
 
-	movq	16(%rsp),%rbx
-	leaq	24(%rsp),%rsp
+	leaq	280+48(%rsp),%rsi
+.cfi_def_cfa	%rsi,8
+	movq	-8(%rsi),%rbx
+.cfi_restore	%rbx
+	leaq	(%rsi),%rsp
+.cfi_def_cfa_register	%rsp
 .Lgmult_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_gmult_4bit,.-gcm_gmult_4bit
 .globl	gcm_ghash_4bit
 .type	gcm_ghash_4bit,@function
 .align	16
 gcm_ghash_4bit:
+.cfi_startproc	
+.byte	243,15,30,250
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 	subq	$280,%rsp
+.cfi_adjust_cfa_offset	280
 .Lghash_prologue:
 	movq	%rdx,%r14
 	movq	%rcx,%r15
@@ -644,21 +683,32 @@ gcm_ghash_4bit:
 	movq	%r8,8(%rdi)
 	movq	%r9,(%rdi)
 
-	leaq	280(%rsp),%rsi
-	movq	0(%rsi),%r15
-	movq	8(%rsi),%r14
-	movq	16(%rsi),%r13
-	movq	24(%rsi),%r12
-	movq	32(%rsi),%rbp
-	movq	40(%rsi),%rbx
-	leaq	48(%rsi),%rsp
+	leaq	280+48(%rsp),%rsi
+.cfi_def_cfa	%rsi,8
+	movq	-48(%rsi),%r15
+.cfi_restore	%r15
+	movq	-40(%rsi),%r14
+.cfi_restore	%r14
+	movq	-32(%rsi),%r13
+.cfi_restore	%r13
+	movq	-24(%rsi),%r12
+.cfi_restore	%r12
+	movq	-16(%rsi),%rbp
+.cfi_restore	%rbp
+	movq	-8(%rsi),%rbx
+.cfi_restore	%rbx
+	leaq	0(%rsi),%rsp
+.cfi_def_cfa_register	%rsp
 .Lghash_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_ghash_4bit,.-gcm_ghash_4bit
 .globl	gcm_init_clmul
 .type	gcm_init_clmul,@function
 .align	16
 gcm_init_clmul:
+.cfi_startproc	
+.byte	243,15,30,250
 .L_init_clmul:
 	movdqu	(%rsi),%xmm2
 	pshufd	$78,%xmm2,%xmm2
@@ -810,11 +860,14 @@ gcm_init_clmul:
 .byte	102,15,58,15,227,8
 	movdqu	%xmm4,80(%rdi)
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_init_clmul,.-gcm_init_clmul
 .globl	gcm_gmult_clmul
 .type	gcm_gmult_clmul,@function
 .align	16
 gcm_gmult_clmul:
+.cfi_startproc	
+.byte	243,15,30,250
 .L_gmult_clmul:
 	movdqu	(%rdi),%xmm0
 	movdqa	.Lbswap_mask(%rip),%xmm5
@@ -861,11 +914,14 @@ gcm_gmult_clmul:
 .byte	102,15,56,0,197
 	movdqu	%xmm0,(%rdi)
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_gmult_clmul,.-gcm_gmult_clmul
 .globl	gcm_ghash_clmul
 .type	gcm_ghash_clmul,@function
 .align	32
 gcm_ghash_clmul:
+.cfi_startproc	
+.byte	243,15,30,250
 .L_ghash_clmul:
 	movdqa	.Lbswap_mask(%rip),%xmm10
 
@@ -1244,11 +1300,14 @@ gcm_ghash_clmul:
 .byte	102,65,15,56,0,194
 	movdqu	%xmm0,(%rdi)
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_ghash_clmul,.-gcm_ghash_clmul
 .globl	gcm_init_avx
 .type	gcm_init_avx,@function
 .align	32
 gcm_init_avx:
+.cfi_startproc	
+.byte	243,15,30,250
 	vzeroupper
 
 	vmovdqu	(%rsi),%xmm2
@@ -1351,17 +1410,23 @@ gcm_init_avx:
 
 	vzeroupper
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_init_avx,.-gcm_init_avx
 .globl	gcm_gmult_avx
 .type	gcm_gmult_avx,@function
 .align	32
 gcm_gmult_avx:
+.cfi_startproc	
+.byte	243,15,30,250
 	jmp	.L_gmult_clmul
+.cfi_endproc	
 .size	gcm_gmult_avx,.-gcm_gmult_avx
 .globl	gcm_ghash_avx
 .type	gcm_ghash_avx,@function
 .align	32
 gcm_ghash_avx:
+.cfi_startproc	
+.byte	243,15,30,250
 	vzeroupper
 
 	vmovdqu	(%rdi),%xmm10
@@ -1733,7 +1798,9 @@ gcm_ghash_avx:
 	vmovdqu	%xmm10,(%rdi)
 	vzeroupper
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	gcm_ghash_avx,.-gcm_ghash_avx
+.section	.rodata
 .align	64
 .Lbswap_mask:
 .byte	15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0
@@ -1787,3 +1854,25 @@ gcm_ghash_avx:
 
 .byte	71,72,65,83,72,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	64
+.previous	
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

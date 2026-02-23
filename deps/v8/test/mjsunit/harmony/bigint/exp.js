@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --harmony-bigint
+// Flags: --allow-natives-syntax
 
 assertEquals(1n, (-1n) ** 0n);
 assertEquals(-1n, (-1n) ** 1n);
@@ -50,3 +50,7 @@ assertEquals(-243n, (-3n) ** 5n);
 
 assertThrows(() => 3n ** -2n, RangeError);  // Negative exponent.
 assertThrows(() => 2n ** (1024n ** 4n), RangeError);  // Too big.
+
+// Mixed types
+assertThrows(() => 1n ** 1, TypeError);
+assertThrows(() => 1 ** 1n, TypeError);

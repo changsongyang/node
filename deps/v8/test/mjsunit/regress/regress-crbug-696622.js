@@ -8,7 +8,10 @@ class C {}
 class D extends C { constructor() { super(...unresolved, 75) } }
 D.__proto__ = null;
 
-assertThrows(() => new D(), TypeError);
-assertThrows(() => new D(), TypeError);
+%PrepareFunctionForOptimization(D);
+// ReferenceError because argument evaluation happens before calling the super
+// constructor.
+assertThrows(() => new D(), ReferenceError);
+assertThrows(() => new D(), ReferenceError);
 %OptimizeFunctionOnNextCall(D);
-assertThrows(() => new D(), TypeError);
+assertThrows(() => new D(), ReferenceError);

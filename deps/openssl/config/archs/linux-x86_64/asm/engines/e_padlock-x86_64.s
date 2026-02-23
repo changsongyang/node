@@ -8,11 +8,20 @@ padlock_capability:
 	cpuid
 	xorl	%eax,%eax
 	cmpl	$0x746e6543,%ebx
-	jne	.Lnoluck
+	jne	.Lzhaoxin
 	cmpl	$0x48727561,%edx
 	jne	.Lnoluck
 	cmpl	$0x736c7561,%ecx
 	jne	.Lnoluck
+	jmp	.LzhaoxinEnd
+.Lzhaoxin:
+	cmpl	$0x68532020,%ebx
+	jne	.Lnoluck
+	cmpl	$0x68676e61,%edx
+	jne	.Lnoluck
+	cmpl	$0x20206961,%ecx
+	jne	.Lnoluck
+.LzhaoxinEnd:
 	movl	$0xC0000000,%eax
 	cpuid
 	movl	%eax,%edx
@@ -34,6 +43,8 @@ padlock_capability:
 .align	16
 padlock_key_bswap:
 	movl	240(%rdi),%edx
+	incl	%edx
+	shll	$2,%edx
 .Lbswap_loop:
 	movl	(%rdi),%eax
 	bswapl	%eax
@@ -1024,3 +1035,24 @@ padlock_ctr32_encrypt:
 .align	8
 .Lpadlock_saved_context:
 .quad	0
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

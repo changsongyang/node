@@ -33,7 +33,7 @@ function g() {
 
 async function f() {
   var a = 1;
-  debugger;        // B0 StepNext
+  debugger;        // B0 StepOver
   a += await g();  // B1 StepOut
   return a;
 }
@@ -42,6 +42,6 @@ f();
 
 late_resolve(3);   // B2 Continue
 
-%RunMicrotasks();
+%PerformMicrotaskCheckpoint();
 
 assertEquals(3, step_count);

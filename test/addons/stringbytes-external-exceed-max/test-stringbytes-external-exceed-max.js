@@ -1,17 +1,16 @@
 'use strict';
-// Flags: --expose-internals
 
 const common = require('../../common');
-const { internalBinding } = require('internal/test/binding');
 const skipMessage = 'intensive toString tests due to memory confinements';
 if (!common.enoughTestMem)
   common.skip(skipMessage);
 
+const assert = require('assert');
 const binding = require(`./build/${common.buildType}/binding`);
 
 // v8 fails silently if string length > v8::String::kMaxLength
 // v8::String::kMaxLength defined in v8.h
-const kStringMaxLength = internalBinding('buffer').kStringMaxLength;
+const kStringMaxLength = require('buffer').constants.MAX_STRING_LENGTH;
 
 let buf;
 try {
@@ -28,11 +27,11 @@ if (!binding.ensureAllocation(2 * kStringMaxLength))
 
 const stringLengthHex = kStringMaxLength.toString(16);
 
-common.expectsError(function() {
+assert.throws(() => {
   buf.toString('utf16le');
 }, {
   message: `Cannot create a string longer than 0x${stringLengthHex} ` +
            'characters',
   code: 'ERR_STRING_TOO_LONG',
-  type: Error
+  name: 'Error',
 });

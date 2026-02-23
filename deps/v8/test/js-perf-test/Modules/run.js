@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 
-load('../base.js');
+d8.file.execute('../base.js');
 
 new BenchmarkSuite('BasicExport', [100], [
   new Benchmark('BasicExport', false, false, 0, BasicExport)
@@ -23,21 +23,21 @@ const iterations = 10000;
 function BasicExport() {
   let success = false;
   import("basic-export.js").then(m => { m.bench(); success = true; });
-  %RunMicrotasks();
+  %PerformMicrotaskCheckpoint();
   if (!success) throw new Error(666);
 }
 
 function BasicImport() {
   let success = false;
   import("basic-import.js").then(m => { m.bench(); success = true; });
-  %RunMicrotasks();
+  %PerformMicrotaskCheckpoint();
   if (!success) throw new Error(666);
 }
 
 function BasicNamespace() {
   let success = false;
   import("basic-namespace.js").then(m => { m.bench(); success = true; });
-  %RunMicrotasks();
+  %PerformMicrotaskCheckpoint();
   if (!success) throw new Error(666);
 }
 

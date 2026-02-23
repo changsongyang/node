@@ -32,7 +32,7 @@ function workerScript(script) {
       }
     };
 
-    var onmessage = function(msg) {
+    var onmessage = function({data:msg}) {
       switch (msg.kind) {
         case 'start':
           i32a = msg.i32a;
@@ -76,7 +76,7 @@ var agent = {
     if (i32a === null) {
       i32a = new Int32Array(new SharedArrayBuffer(256));
     }
-    var w = new Worker(workerScript(script));
+    var w = new Worker(workerScript(script), {type: 'string'});
     w.index = workers.length;
     w.postMessage({kind: 'start', i32a: i32a, index: w.index});
     workers.push(w);

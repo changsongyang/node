@@ -1,7 +1,7 @@
 /*
- * Copyright 1998-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1998-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -12,20 +12,24 @@
 #include <string.h>
 #include <openssl/objects.h>
 #include <openssl/comp.h>
-#include "comp_lcl.h"
+#include <openssl/err.h>
+#include "comp_local.h"
 
 COMP_CTX *COMP_CTX_new(COMP_METHOD *meth)
 {
     COMP_CTX *ret;
 
+    if (meth == NULL)
+        return NULL;
+
     if ((ret = OPENSSL_zalloc(sizeof(*ret))) == NULL)
-        return (NULL);
+        return NULL;
     ret->meth = meth;
     if ((ret->meth->init != NULL) && !ret->meth->init(ret)) {
         OPENSSL_free(ret);
         ret = NULL;
     }
-    return (ret);
+    return ret;
 }
 
 const COMP_METHOD *COMP_CTX_get_method(const COMP_CTX *ctx)
@@ -35,11 +39,15 @@ const COMP_METHOD *COMP_CTX_get_method(const COMP_CTX *ctx)
 
 int COMP_get_type(const COMP_METHOD *meth)
 {
+    if (meth == NULL)
+        return NID_undef;
     return meth->type;
 }
 
 const char *COMP_get_name(const COMP_METHOD *meth)
 {
+    if (meth == NULL)
+        return NULL;
     return meth->name;
 }
 
@@ -47,7 +55,6 @@ void COMP_CTX_free(COMP_CTX *ctx)
 {
     if (ctx == NULL)
         return;
-
     if (ctx->meth->finish != NULL)
         ctx->meth->finish(ctx);
 
@@ -55,37 +62,37 @@ void COMP_CTX_free(COMP_CTX *ctx)
 }
 
 int COMP_compress_block(COMP_CTX *ctx, unsigned char *out, int olen,
-                        unsigned char *in, int ilen)
+    unsigned char *in, int ilen)
 {
     int ret;
     if (ctx->meth->compress == NULL) {
-        return (-1);
+        return -1;
     }
     ret = ctx->meth->compress(ctx, out, olen, in, ilen);
     if (ret > 0) {
         ctx->compress_in += ilen;
         ctx->compress_out += ret;
     }
-    return (ret);
+    return ret;
 }
 
 int COMP_expand_block(COMP_CTX *ctx, unsigned char *out, int olen,
-                      unsigned char *in, int ilen)
+    unsigned char *in, int ilen)
 {
     int ret;
 
     if (ctx->meth->expand == NULL) {
-        return (-1);
+        return -1;
     }
     ret = ctx->meth->expand(ctx, out, olen, in, ilen);
     if (ret > 0) {
         ctx->expand_in += ilen;
         ctx->expand_out += ret;
     }
-    return (ret);
+    return ret;
 }
 
-int COMP_CTX_get_type(const COMP_CTX* comp)
+int COMP_CTX_get_type(const COMP_CTX *comp)
 {
     return comp->meth ? comp->meth->type : NID_undef;
 }

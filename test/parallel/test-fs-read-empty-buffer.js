@@ -15,7 +15,7 @@ assert.throws(
   {
     code: 'ERR_INVALID_ARG_VALUE',
     message: 'The argument \'buffer\' is empty and cannot be written. ' +
-    'Received Uint8Array []'
+    'Received Uint8Array(0) []'
   }
 );
 
@@ -24,18 +24,18 @@ assert.throws(
   {
     code: 'ERR_INVALID_ARG_VALUE',
     message: 'The argument \'buffer\' is empty and cannot be written. ' +
-    'Received Uint8Array []'
+    'Received Uint8Array(0) []'
   }
 );
 
 (async () => {
-  const filehandle = await fsPromises.open(filepath, 'r');
+  await using filehandle = await fsPromises.open(filepath, 'r');
   assert.rejects(
     () => filehandle.read(buffer, 0, 1, 0),
     {
       code: 'ERR_INVALID_ARG_VALUE',
       message: 'The argument \'buffer\' is empty and cannot be written. ' +
-               'Received Uint8Array []'
+               'Received Uint8Array(0) []'
     }
-  );
-})();
+  ).then(common.mustCall());
+})().then(common.mustCall());

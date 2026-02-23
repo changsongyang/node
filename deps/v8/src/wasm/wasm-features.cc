@@ -3,38 +3,53 @@
 // found in the LICENSE file.
 
 #include "src/wasm/wasm-features.h"
-#include "src/flags.h"
-#include "src/handles-inl.h"
-#include "src/isolate.h"
+
+#include "src/execution/isolate-inl.h"
+#include "src/flags/flags.h"
+#include "src/handles/handles-inl.h"
+#include "src/objects/string.h"
 
 namespace v8 {
 namespace internal {
 namespace wasm {
 
-#define COMMA ,
-#define SPACE
-#define DO_UNION(feat, desc, val) dst->feat |= src.feat;
-#define FLAG_REF(feat, desc, val) FLAG_experimental_wasm_##feat
+// static
+WasmEnabledFeatures WasmEnabledFeatures::FromFlags() {
+  WasmEnabledFeatures features = WasmEnabledFeatures::None();
 
-void UnionFeaturesInto(WasmFeatures* dst, const WasmFeatures& src) {
-  FOREACH_WASM_FEATURE(DO_UNION, SPACE);
-}
+#if V8_ENABLE_DRUMBRAKE
+  // DrumBrake supports only a subset or older versions of some Wasm features.
+  if (v8_flags.wasm_jitless) {
+    features.Add(WasmEnabledFeature::legacy_eh);
+  }
+#endif  // V8_ENABLE_DRUMBRAKE
 
-WasmFeatures WasmFeaturesFromFlags() {
-  return WasmFeatures{FOREACH_WASM_FEATURE(FLAG_REF, COMMA)};
-}
-
-WasmFeatures WasmFeaturesFromIsolate(Isolate* isolate) {
-  WasmFeatures features = WasmFeaturesFromFlags();
-  features.threads |=
-      isolate->AreWasmThreadsEnabled(handle(isolate->context(), isolate));
+#define CHECK_FEATURE_FLAG(feat, ...)                              \
+  if (!v8_flags.wasm_jitless && v8_flags.experimental_wasm_##feat) \
+    features.Add(WasmEnabledFeature::feat);
+  FOREACH_WASM_FEATURE_FLAG(CHECK_FEATURE_FLAG)
+#undef CHECK_FEATURE_FLAG
   return features;
 }
 
-#undef DO_UNION
-#undef FLAG_REF
-#undef SPACE
-#undef COMMA
+// static
+WasmEnabledFeatures WasmEnabledFeatures::FromIsolate(Isolate* isolate) {
+  return FromContext(isolate, isolate->native_context());
+}
+
+// static
+WasmEnabledFeatures WasmEnabledFeatures::FromContext(
+    Isolate* isolate, DirectHandle<NativeContext> context) {
+  WasmEnabledFeatures features = WasmEnabledFeatures::FromFlags();
+
+  if (isolate->IsWasmCustomDescriptorsEnabled(context)) {
+    features.Add(WasmEnabledFeature::custom_descriptors);
+  }
+
+  // This space intentionally left blank for future Wasm origin trials.
+  return features;
+}
+
 }  // namespace wasm
 }  // namespace internal
 }  // namespace v8

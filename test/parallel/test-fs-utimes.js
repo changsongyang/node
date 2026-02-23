@@ -24,68 +24,120 @@ const common = require('../common');
 const assert = require('assert');
 const util = require('util');
 const fs = require('fs');
+const url = require('url');
 
 const tmpdir = require('../common/tmpdir');
 tmpdir.refresh();
 
-let tests_ok = 0;
-let tests_run = 0;
+const lpath = `${tmpdir.path}/symlink`;
+fs.symlinkSync('unoent-entry', lpath);
 
-function stat_resource(resource) {
+function stat_resource(resource, statSync = fs.statSync) {
   if (typeof resource === 'string') {
-    return fs.statSync(resource);
-  } else {
-    const stats = fs.fstatSync(resource);
-    // ensure mtime has been written to disk
-    // except for directories on AIX where it cannot be synced
-    if (common.isAIX && stats.isDirectory())
-      return stats;
-    fs.fsyncSync(resource);
-    return fs.fstatSync(resource);
+    return statSync(resource);
   }
+  const stats = fs.fstatSync(resource);
+  // Ensure mtime has been written to disk
+  // except for directories on AIX where it cannot be synced
+  if ((common.isAIX || common.isIBMi) && stats.isDirectory())
+    return stats;
+  fs.fsyncSync(resource);
+  return fs.fstatSync(resource);
 }
 
-function check_mtime(resource, mtime) {
+function check_mtime(resource, mtime, statSync) {
   mtime = fs._toUnixTimestamp(mtime);
-  const stats = stat_resource(resource);
+  const stats = stat_resource(resource, statSync);
   const real_mtime = fs._toUnixTimestamp(stats.mtime);
-  // check up to single-second precision
-  // sub-second precision is OS and fs dependant
-  return mtime - real_mtime < 2;
+  return mtime - real_mtime;
 }
 
 function expect_errno(syscall, resource, err, errno) {
-  if (err && (err.code === errno || err.code === 'ENOSYS')) {
-    tests_ok++;
-  } else {
-    console.log('FAILED:', 'expect_errno', util.inspect(arguments));
-  }
+  assert(
+    err && (err.code === errno || err.code === 'ENOSYS'),
+    `FAILED: expect_errno ${util.inspect(arguments)}`
+  );
 }
 
-function expect_ok(syscall, resource, err, atime, mtime) {
-  if (!err && check_mtime(resource, mtime) ||
-      err && err.code === 'ENOSYS') {
-    tests_ok++;
-  } else {
-    console.log('FAILED:', 'expect_ok', util.inspect(arguments));
-  }
+function expect_ok(syscall, resource, err, atime, mtime, statSync) {
+  const mtime_diff = check_mtime(resource, mtime, statSync);
+  assert(
+    // Check up to single-second precision.
+    // Sub-second precision is OS and fs dependent.
+    !err && (mtime_diff < 2) || err && err.code === 'ENOSYS',
+    `FAILED: expect_ok ${util.inspect(arguments)}
+     check_mtime: ${mtime_diff}`
+  );
 }
 
-function testIt(atime, mtime, callback) {
+const stats = fs.statSync(tmpdir.path);
+
+const asPath = (path) => path;
+const asUrl = (path) => url.pathToFileURL(path);
+
+const cases = [
+  [asPath, new Date('1982-09-10 13:37')],
+  [asPath, new Date()],
+  [asPath, 123456.789],
+  [asPath, stats.mtime],
+  [asPath, '123456', -1],
+  [asPath, new Date('2017-04-08T17:59:38.008Z')],
+  [asUrl, new Date()],
+];
+
+runTests(cases.values());
+
+function runTests(iter) {
+  const { value, done } = iter.next();
+  if (done) return;
+
+  // Support easy setting same or different atime / mtime values.
+  const [pathType, atime, mtime = atime] = value;
 
   let fd;
+  //
+  // test async code paths
+  //
+  fs.utimes(pathType(tmpdir.path), atime, mtime, common.mustCall((err) => {
+    expect_ok('utimes', tmpdir.path, err, atime, mtime);
+
+    fs.lutimes(pathType(lpath), atime, mtime, common.mustCall((err) => {
+      expect_ok('lutimes', lpath, err, atime, mtime, fs.lstatSync);
+
+      fs.utimes(pathType('foobarbaz'), atime, mtime, common.mustCall((err) => {
+        expect_errno('utimes', 'foobarbaz', err, 'ENOENT');
+
+        // don't close this fd
+        if (common.isWindows) {
+          fd = fs.openSync(tmpdir.path, 'r+');
+        } else {
+          fd = fs.openSync(tmpdir.path, 'r');
+        }
+
+        fs.futimes(fd, atime, mtime, common.mustCall((err) => {
+          expect_ok('futimes', fd, err, atime, mtime);
+
+          syncTests();
+
+          setImmediate(common.mustCall(runTests), iter);
+        }));
+      }));
+    }));
+  }));
+
   //
   // test synchronized code paths, these functions throw on failure
   //
   function syncTests() {
-    fs.utimesSync(tmpdir.path, atime, mtime);
+    fs.utimesSync(pathType(tmpdir.path), atime, mtime);
     expect_ok('utimesSync', tmpdir.path, undefined, atime, mtime);
-    tests_run++;
 
-    // some systems don't have futimes
+    fs.lutimesSync(pathType(lpath), atime, mtime);
+    expect_ok('lutimesSync', lpath, undefined, atime, mtime, fs.lstatSync);
+
+    // Some systems don't have futimes
     // if there's an error, it should be ENOSYS
     try {
-      tests_run++;
       fs.futimesSync(fd, atime, mtime);
       expect_ok('futimesSync', fd, undefined, atime, mtime);
     } catch (ex) {
@@ -94,139 +146,66 @@ function testIt(atime, mtime, callback) {
 
     let err;
     try {
-      fs.utimesSync('foobarbaz', atime, mtime);
+      fs.utimesSync(pathType('foobarbaz'), atime, mtime);
     } catch (ex) {
       err = ex;
     }
     expect_errno('utimesSync', 'foobarbaz', err, 'ENOENT');
-    tests_run++;
 
     err = undefined;
-    common.expectsError(
-      () => fs.futimesSync(-1, atime, mtime),
-      {
-        code: 'ERR_OUT_OF_RANGE',
-        type: RangeError,
-        message: 'The value of "fd" is out of range. ' +
-                'It must be >= 0 && < 4294967296. Received -1'
-      }
-    );
-    tests_run++;
   }
-
-  //
-  // test async code paths
-  //
-  fs.utimes(tmpdir.path, atime, mtime, common.mustCall((err) => {
-    expect_ok('utimes', tmpdir.path, err, atime, mtime);
-
-    fs.utimes('foobarbaz', atime, mtime, common.mustCall((err) => {
-      expect_errno('utimes', 'foobarbaz', err, 'ENOENT');
-
-      // don't close this fd
-      if (common.isWindows) {
-        fd = fs.openSync(tmpdir.path, 'r+');
-      } else {
-        fd = fs.openSync(tmpdir.path, 'r');
-      }
-
-      fs.futimes(fd, atime, mtime, common.mustCall((err) => {
-        expect_ok('futimes', fd, err, atime, mtime);
-
-        common.expectsError(
-          () => fs.futimes(-1, atime, mtime, common.mustNotCall()),
-          {
-            code: 'ERR_OUT_OF_RANGE',
-            type: RangeError,
-            message: 'The value of "fd" is out of range. ' +
-                    'It must be >= 0 && < 4294967296. Received -1'
-          }
-        );
-
-        syncTests();
-
-        tests_run++;
-      }));
-      tests_run++;
-    }));
-    tests_run++;
-  }));
-  tests_run++;
 }
 
-const stats = fs.statSync(tmpdir.path);
-
-// Run tests
-const runTest = common.mustCall(testIt, 1);
-
-runTest(new Date('1982-09-10 13:37'), new Date('1982-09-10 13:37'), () => {
-  runTest(new Date(), new Date(), () => {
-    runTest(123456.789, 123456.789, () => {
-      runTest(stats.mtime, stats.mtime, () => {
-        runTest('123456', -1, () => {
-          runTest(
-            new Date('2017-04-08T17:59:38.008Z'),
-            new Date('2017-04-08T17:59:38.008Z'),
-            common.mustCall(() => {
-              // Done
-            })
-          );
-        });
-      });
-    });
-  });
-});
-
-process.on('exit', () => {
-  assert.strictEqual(tests_ok, tests_run - 2);
-});
-
-
-// Ref: https://github.com/nodejs/node/issues/13255
-const path = `${tmpdir.path}/test-utimes-precision`;
-fs.writeFileSync(path, '');
-
-// test Y2K38 for all platforms [except 'arm', 'OpenBSD' and 'SunOS']
-if (!process.arch.includes('arm') && !common.isOpenBSD && !common.isSunOS) {
-  // because 2 ** 31 doesn't look right
-  // eslint-disable-next-line space-infix-ops
-  const Y2K38_mtime = 2**31;
-  fs.utimesSync(path, Y2K38_mtime, Y2K38_mtime);
-  const Y2K38_stats = fs.statSync(path);
-  assert.strictEqual(Y2K38_mtime, Y2K38_stats.mtime.getTime() / 1000);
+const expectTypeError = {
+  code: 'ERR_INVALID_ARG_TYPE',
+  name: 'TypeError'
+};
+// utimes-only error cases
+{
+  assert.throws(
+    () => fs.utimes(0, new Date(), new Date(), common.mustNotCall()),
+    expectTypeError
+  );
+  assert.throws(
+    () => fs.utimesSync(0, new Date(), new Date()),
+    expectTypeError
+  );
 }
 
-if (common.isWindows) {
-  // this value would get converted to (double)1713037251359.9998
-  const truncate_mtime = 1713037251360;
-  fs.utimesSync(path, truncate_mtime / 1000, truncate_mtime / 1000);
-  const truncate_stats = fs.statSync(path);
-  assert.strictEqual(truncate_mtime, truncate_stats.mtime.getTime());
-
-  // test Y2K38 for windows
-  // This value if treaded as a `signed long` gets converted to -2135622133469.
-  // POSIX systems stores timestamps in {long t_sec, long t_usec}.
-  // NTFS stores times in nanoseconds in a single `uint64_t`, so when libuv
-  // calculates (long)`uv_timespec_t.tv_sec` we get 2's complement.
-  const overflow_mtime = 2159345162531;
-  fs.utimesSync(path, overflow_mtime / 1000, overflow_mtime / 1000);
-  const overflow_stats = fs.statSync(path);
-  assert.strictEqual(overflow_mtime, overflow_stats.mtime.getTime());
-}
-
-[false, 0, {}, [], null, undefined].forEach((i) => {
-  common.expectsError(
+// shared error cases
+[false, {}, [], null, undefined].forEach((i) => {
+  assert.throws(
     () => fs.utimes(i, new Date(), new Date(), common.mustNotCall()),
-    {
-      code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
-    }
+    expectTypeError
   );
-  common.expectsError(
+  assert.throws(
     () => fs.utimesSync(i, new Date(), new Date()),
-    {
-      code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
-    }
+    expectTypeError
+  );
+  assert.throws(
+    () => fs.futimes(i, new Date(), new Date(), common.mustNotCall()),
+    expectTypeError
+  );
+  assert.throws(
+    () => fs.futimesSync(i, new Date(), new Date()),
+    expectTypeError
   );
 });
+
+const expectRangeError = {
+  code: 'ERR_OUT_OF_RANGE',
+  name: 'RangeError',
+  message: 'The value of "fd" is out of range. ' +
+           'It must be >= 0 && <= 2147483647. Received -1'
+};
+// futimes-only error cases
+{
+  assert.throws(
+    () => fs.futimes(-1, new Date(), new Date(), common.mustNotCall()),
+    expectRangeError
+  );
+  assert.throws(
+    () => fs.futimesSync(-1, new Date(), new Date()),
+    expectRangeError
+  );
+}

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --opt --allow-natives-syntax
+// Flags: --turbofan --allow-natives-syntax
 
 function f() {
   var s = "äϠ�𝌆";
@@ -12,8 +12,8 @@ function f() {
   assertEquals("�", i.next().value);
   assertEquals("𝌆", i.next().value);
   assertSame(undefined, i.next().value);
-}
-
+};
+%PrepareFunctionForOptimization(f);
 f();
 f();
 %OptimizeFunctionOnNextCall(f);

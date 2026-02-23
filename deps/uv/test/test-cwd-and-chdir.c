@@ -23,8 +23,7 @@
 #include "task.h"
 #include <string.h>
 
-#define PATHMAX 1024
-extern char executable_path[];
+#define PATHMAX 4096
 
 TEST_IMPL(cwd_and_chdir) {
   char buffer_orig[PATHMAX];
@@ -33,19 +32,26 @@ TEST_IMPL(cwd_and_chdir) {
   size_t size2;
   int err;
 
+  size1 = 1;
+  err = uv_cwd(buffer_orig, &size1);
+  ASSERT_EQ(err, UV_ENOBUFS);
+  ASSERT_GT(size1, 1);
+
   size1 = sizeof buffer_orig;
   err = uv_cwd(buffer_orig, &size1);
-  ASSERT(err == 0);
+  ASSERT_OK(err);
+  ASSERT_GT(size1, 0);
+  ASSERT_NE(buffer_orig[size1], '/');
 
   err = uv_chdir(buffer_orig);
-  ASSERT(err == 0);
+  ASSERT_OK(err);
 
   size2 = sizeof buffer_new;
   err = uv_cwd(buffer_new, &size2);
-  ASSERT(err == 0);
+  ASSERT_OK(err);
 
-  ASSERT(size1 == size2);
-  ASSERT(strcmp(buffer_orig, buffer_new) == 0);
+  ASSERT_EQ(size1, size2);
+  ASSERT_OK(strcmp(buffer_orig, buffer_new));
 
   return 0;
 }

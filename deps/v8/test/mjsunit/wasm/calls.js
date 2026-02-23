@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function assertModule(module, memsize) {
   // Check the module exists.
@@ -47,11 +44,12 @@ function assertFunction(module, func) {
 
   var builder = new WasmModuleBuilder();
 
-  builder.addMemory(1, 1, true);
+  builder.addMemory(1, 1);
+  builder.exportMemoryAs("memory");
   builder.addFunction("sub", kSig_i_ii)
     .addBody([
-      kExprGetLocal, 0,             // --
-      kExprGetLocal, 1,             // --
+      kExprLocalGet, 0,             // --
+      kExprLocalGet, 1,             // --
       kExprI32Sub,                  // --
     ])
     .exportFunc()
@@ -72,7 +70,8 @@ function assertFunction(module, func) {
   var builder = new WasmModuleBuilder();
 
   var kPages = 2;
-  builder.addMemory(kPages, kPages, true);
+  builder.addMemory(kPages, kPages);
+  builder.exportMemoryAs("memory");
   builder.addFunction("nop", kSig_v_v)
     .addBody([kExprNop])
     .exportFunc();
@@ -89,11 +88,12 @@ function assertFunction(module, func) {
   var builder = new WasmModuleBuilder();
 
   var kPages = 3;
-  builder.addMemory(kPages, kPages, true);
+  builder.addMemory(kPages, kPages);
+  builder.exportMemoryAs("memory");
   builder.addFunction("flt", kSig_i_dd)
     .addBody([
-      kExprGetLocal, 0,     // --
-      kExprGetLocal, 1,     // --
+      kExprLocalGet, 0,     // --
+      kExprLocalGet, 1,     // --
       kExprF64Lt            // --
     ])                      // --
     .exportFunc();

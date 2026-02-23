@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-load('test/mjsunit/wasm/wasm-constants.js');
-load('test/mjsunit/wasm/wasm-module-builder.js');
+d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 (function() {
   var builder = new WasmModuleBuilder();
-  builder.addMemory(16, 32, false);
+  builder.addMemory(16, 32);
   builder.addFunction('test', kSig_i_i)
       .addBodyWithEnd([
   kExprI32Const, 0x41,
@@ -26,7 +25,7 @@ load('test/mjsunit/wasm/wasm-module-builder.js');
    kExprI32And,
   kExprI32Eqz,
  kExprI32And,
-kExprGrowMemory, 0x00,
+kExprMemoryGrow, 0x00,
    kExprI32Const, 0x55,
   kExprI32LoadMem8S, 0x00, 0x3a,
    kExprI32LoadMem16U, 0x00, 0x71,

@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "src/compiler/simplified-operator.h"
+
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/operator.h"
-#include "src/compiler/types.h"
+#include "src/compiler/turbofan-types.h"
 #include "test/unittests/test-utils.h"
 
 namespace v8 {
@@ -61,7 +62,8 @@ const PureOperator kPureOperators[] = {
     PURE(ChangeUint32ToTagged, Operator::kNoProperties, 1),
     PURE(ChangeTaggedToBit, Operator::kNoProperties, 1),
     PURE(ChangeBitToTagged, Operator::kNoProperties, 1),
-    PURE(TruncateTaggedToWord32, Operator::kNoProperties, 1),
+    PURE(TruncateNumberOrOddballToWord32, Operator::kNoProperties, 1),
+    PURE(TruncateNumberOrOddballOrHoleToWord32, Operator::kNoProperties, 1),
     PURE(TruncateTaggedToFloat64, Operator::kNoProperties, 1),
     PURE(TruncateTaggedToBit, Operator::kNoProperties, 1),
     PURE(ObjectIsNumber, Operator::kNoProperties, 1),
@@ -115,16 +117,15 @@ TEST_P(SimplifiedPureOperatorTest, Properties) {
   EXPECT_EQ(pop.properties, op->properties() & pop.properties);
 }
 
-INSTANTIATE_TEST_CASE_P(SimplifiedOperatorTest, SimplifiedPureOperatorTest,
-                        ::testing::ValuesIn(kPureOperators));
-
+INSTANTIATE_TEST_SUITE_P(SimplifiedOperatorTest, SimplifiedPureOperatorTest,
+                         ::testing::ValuesIn(kPureOperators));
 
 // -----------------------------------------------------------------------------
 
 // Element access operators.
 
 const ElementAccess kElementAccesses[] = {
-    {kTaggedBase, FixedArray::kHeaderSize, Type::Any(),
+    {kTaggedBase, OFFSET_OF_DATA_START(FixedArray), Type::Any(),
      MachineType::AnyTagged(), kFullWriteBarrier},
     {kUntaggedBase, 0, Type::Any(), MachineType::Int8(), kNoWriteBarrier},
     {kUntaggedBase, 0, Type::Any(), MachineType::Int16(), kNoWriteBarrier},
@@ -147,25 +148,24 @@ const ElementAccess kElementAccesses[] = {
     {kUntaggedBase, 0, Type::Number(),
      MachineType(MachineRepresentation::kFloat64, MachineSemantic::kNone),
      kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Signed32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Signed32(),
      MachineType::Int8(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Unsigned32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Unsigned32(),
      MachineType::Uint8(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Signed32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Signed32(),
      MachineType::Int16(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Unsigned32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Unsigned32(),
      MachineType::Uint16(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Signed32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Signed32(),
      MachineType::Int32(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Unsigned32(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Unsigned32(),
      MachineType::Uint32(), kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Number(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Number(),
      MachineType(MachineRepresentation::kFloat32, MachineSemantic::kNone),
      kNoWriteBarrier},
-    {kTaggedBase, FixedTypedArrayBase::kDataOffset, Type::Number(),
+    {kTaggedBase, OFFSET_OF_DATA_START(ByteArray), Type::Number(),
      MachineType(MachineRepresentation::kFloat32, MachineSemantic::kNone),
      kNoWriteBarrier}};
-
 
 class SimplifiedElementAccessOperatorTest
     : public TestWithZone,
@@ -213,10 +213,9 @@ TEST_P(SimplifiedElementAccessOperatorTest, StoreElement) {
   EXPECT_EQ(0, op->ControlOutputCount());
 }
 
-
-INSTANTIATE_TEST_CASE_P(SimplifiedOperatorTest,
-                        SimplifiedElementAccessOperatorTest,
-                        ::testing::ValuesIn(kElementAccesses));
+INSTANTIATE_TEST_SUITE_P(SimplifiedOperatorTest,
+                         SimplifiedElementAccessOperatorTest,
+                         ::testing::ValuesIn(kElementAccesses));
 
 }  // namespace simplified_operator_unittest
 }  // namespace compiler

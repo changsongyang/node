@@ -20,26 +20,34 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
+
 const common = require('../common');
-const assert = require('assert');
-const zlib = require('zlib');
 
-const gzip = zlib.createGzip();
-const gunz = zlib.createUnzip();
+const assert = require('node:assert');
+const zlib = require('node:zlib');
 
-gzip.pipe(gunz);
+for (const [ createCompress, createDecompress ] of [
+  [ zlib.createGzip, zlib.createGunzip ],
+  [ zlib.createBrotliCompress, zlib.createBrotliDecompress ],
+  [ zlib.createZstdCompress, zlib.createZstdDecompress ],
+]) {
+  const gzip = createCompress();
+  const gunz = createDecompress();
 
-let output = '';
-const input = 'A line of data\n';
-gunz.setEncoding('utf8');
-gunz.on('data', (c) => output += c);
-gunz.on('end', common.mustCall(() => {
-  assert.strictEqual(output, input);
-  assert.strictEqual(gzip._nextFlush, -1);
-}));
+  gzip.pipe(gunz);
 
-// make sure that flush/write doesn't trigger an assert failure
-gzip.flush();
-gzip.write(input);
-gzip.end();
-gunz.read(0);
+  let output = '';
+  const input = 'A line of data\n';
+  gunz.setEncoding('utf8');
+  gunz.on('error', common.mustNotCall());
+  gunz.on('data', (c) => output += c);
+  gunz.on('end', common.mustCall(() => {
+    assert.strictEqual(output, input);
+  }));
+
+  // Make sure that flush/write doesn't trigger an assert failure
+  gzip.flush();
+  gzip.write(input);
+  gzip.end();
+  gunz.read(0);
+}

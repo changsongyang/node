@@ -36,12 +36,19 @@
   # Irregexp interpreter overflows stack. We should just not crash.
   'fast/js/regexp-stack-overflow': [PASS, FAIL],
 
+  # This test tries to sort very large array. Array#sort pre-processing does
+  # not support huge sparse Arrays, so this test runs a very long time.
+  # https://crbug.com/v8/8714
+  'array-sort-small-sparse-array-with-large-length': [SKIP],
+
   # Slow tests.
   'dfg-double-vote-fuzz': [PASS, SLOW],
+  'dfg-int-overflow-in-loop': [PASS, SLOW],
 }],  # ALWAYS
-['system == windows', {
+['system == windows and not clang', {
   # Exceeds call stack on windows after MSVS2017 switch.
   'fast/js/excessive-comma-usage': [SKIP],
+  'run-json-stringify': [SKIP],
 }],  # system == windows
 ['mode == debug', {
   # Too slow in debug mode.
@@ -52,37 +59,26 @@
   # Too slow with --enable-slow-asserts.
   'array-iterate-backwards': [SKIP],
 }],  # 'mode == debug'
-['simulator', {
+['simulator_run', {
   # Skip tests that timeout with turbofan.
   'array-iterate-backwards': [PASS, NO_VARIANTS],
   'function-apply-aliased': [SKIP],
 
   # Skip tests that are too slow for simulators.
   'dfg-int-overflow-in-loop': [SKIP],
-}],  # 'simulator'
-['arch == arm64 and simulator_run', {
-  'dfg-int-overflow-in-loop': [SKIP],
-}],  # 'arch == arm64 and simulator_run'
+}],  # 'simulator_run'
+['mode == debug and simulator_run', {
+  # Too slow on debug simulators.
+  'dfg-inline-function-dot-caller': [SKIP],
+}],  # 'mode == debug and simulator_run'
 ['dcheck_always_on == True and (arch == arm or arch == arm64)', {
   # Doesn't work with gcc 4.6 on arm or arm64 for some reason.
   'reentrant-caching': [SKIP],
 }],  # 'dcheck_always_on == True and (arch == arm or arch == arm64)'
-['arch == mips', {
-  # Too slow for mips big-endian boards on bots (no FPU).
-  'dfg-int-overflow-in-loop': [SKIP],
-}], # 'arch == mips'
-['(arch == mips64 or arch == mips64el) and simulator_run', {
+['arch == s390x', {
   # Too slow.
   'dfg-int-overflow-in-loop': [SKIP],
-}], # '(arch == mips64 or arch == mips64el) and simulator_run'
-['(arch == ppc or arch == ppc64) and simulator_run', {
-  # Too slow.
-  'dfg-int-overflow-in-loop': [SKIP],
-}], # 'arch == ppc or arch == ppc64'
-['arch == s390 or arch == s390x', {
-  # Too slow.
-  'dfg-int-overflow-in-loop': [SKIP],
-}],  # 'arch == s390 or arch == s390x'
+}],  # 'arch == s390x'
 
 ##############################################################################
 ['asan == True', {
@@ -116,17 +112,10 @@
 }],  # arch == arm64 and msan
 
 ##############################################################################
-['(variant == nooptimization or variant == stress or variant == no_liftoff) and (arch == arm or arch == arm64) and simulator_run', {
+['variant in [nooptimization, stress, stress_js_bg_compile_wasm_code_gc] and (arch == arm or arch == arm64) and simulator_run', {
   # Slow tests: https://crbug.com/v8/7783
   'dfg-double-vote-fuzz': [SKIP],
-}],  # (variant == nooptimization or variant == stress or variant == no_liftoff) and (arch == arm or arch == arm64) and simulator_run
-
-##############################################################################
-['gcov_coverage', {
-  # Tests taking too long or getting too large call stacks.
-  'fast/js/excessive-comma-usage': [SKIP],
-  'run-json-stringify': [SKIP],
-}],  # 'gcov_coverage'
+}],  # variant in [nooptimization, stress, stress_js_bg_compile_wasm_code_gc] and (arch == arm or arch == arm64) and simulator_run
 
 ##############################################################################
 ['variant == no_wasm_traps', {
@@ -134,9 +123,25 @@
 }],  # variant == no_wasm_traps
 
 ##############################################################################
-['no_i18n == True', {
+['not i18n', {
   'fast/js/string-capitalization': [FAIL],
-}],  # variant == no_wasm_traps
+}],  # not i18n
+
+################################################################################
+['variant == stress_snapshot', {
+  '*': [SKIP],  # only relevant for mjsunit tests.
+}],
 
 ##############################################################################
+['gc_fuzzer or deopt_fuzzer', {
+  # BUG(v8:13154) Skipped until bug is fixed.
+  'fast/js/deep-recursion-test': [SKIP],
+}], # gc_fuzzer or deopt_fuzzer
+
+##############################################################################
+['full_debug', {
+  # https://crbug.com/447172713
+  'run-json-stringify': [SKIP],
+}],  # 'full_debug'
+
 ]

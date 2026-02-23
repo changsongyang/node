@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm --gc-interval=500 --stress-compaction --expose-gc
+// Flags: --gc-interval=500 --stress-compaction --expose-gc
 
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function run(f) {
   // wrap the creation in a closure so that the only thing returned is
@@ -15,7 +14,7 @@ function run(f) {
     builder.addImport("mod", "the_name_of_my_import", kSig_i_i);
     builder.addFunction("main", kSig_i_i)
       .addBody([
-        kExprGetLocal, 0,
+        kExprLocalGet, 0,
         kExprCallFunction, 0])
       .exportAs("main");
     print("module");

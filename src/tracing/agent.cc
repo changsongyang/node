@@ -3,7 +3,7 @@
 #include <string>
 #include "trace_event.h"
 #include "tracing/node_trace_buffer.h"
-#include "debug_utils.h"
+#include "debug_utils-inl.h"
 #include "env-inl.h"
 
 namespace node {
@@ -94,10 +94,15 @@ void Agent::Start() {
   // This thread should be created *after* async handles are created
   // (within NodeTraceWriter and NodeTraceBuffer constructors).
   // Otherwise the thread could shut down prematurely.
-  CHECK_EQ(0, uv_thread_create(&thread_, [](void* arg) {
-    Agent* agent = static_cast<Agent*>(arg);
-    uv_run(&agent->tracing_loop_, UV_RUN_DEFAULT);
-  }, this));
+  CHECK_EQ(0,
+           uv_thread_create(
+               &thread_,
+               [](void* arg) {
+                 uv_thread_setname("TraceEventWorker");
+                 Agent* agent = static_cast<Agent*>(arg);
+                 uv_run(&agent->tracing_loop_, UV_RUN_DEFAULT);
+               },
+               this));
   started_ = true;
 }
 
@@ -207,9 +212,17 @@ void Agent::AppendTraceEvent(TraceObject* trace_event) {
     id_writer.second->AppendTraceEvent(trace_event);
 }
 
+void Agent::AddMetadataEvent(std::unique_ptr<TraceObject> event) {
+  Mutex::ScopedLock lock(metadata_events_mutex_);
+  metadata_events_.push_back(std::move(event));
+}
+
 void Agent::Flush(bool blocking) {
-  for (const auto& event : metadata_events_)
-    AppendTraceEvent(event.get());
+  {
+    Mutex::ScopedLock lock(metadata_events_mutex_);
+    for (const auto& event : metadata_events_)
+      AppendTraceEvent(event.get());
+  }
 
   for (const auto& id_writer : writers_)
     id_writer.second->Flush(blocking);
@@ -234,8 +247,9 @@ void TracingController::AddMetadataEvent(
       TRACE_EVENT_FLAG_NONE,
       CurrentTimestampMicroseconds(),
       CurrentCpuTimestampMicroseconds());
-  node::tracing::TraceEventHelper::GetAgent()->AddMetadataEvent(
-      std::move(trace_event));
+  Agent* node_agent = node::tracing::TraceEventHelper::GetAgent();
+  if (node_agent != nullptr)
+    node_agent->AddMetadataEvent(std::move(trace_event));
 }
 
 }  // namespace tracing

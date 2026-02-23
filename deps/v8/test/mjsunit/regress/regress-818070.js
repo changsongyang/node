@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --opt --no-always-opt --allow-natives-syntax
+// Flags: --turbofan --allow-natives-syntax
 
 function f(a) {
   Math.imul(a);
 }
 
 x = { [Symbol.toPrimitive]: () => FAIL };
+%PrepareFunctionForOptimization(f);
 f(1);
 f(1);
 %OptimizeFunctionOnNextCall(f);
@@ -19,6 +20,7 @@ function f(a) {
 }
 
 x = { [Symbol.toPrimitive]: () => FAIL };
+%PrepareFunctionForOptimization(f);
 f(1);
 f(1);
 %OptimizeFunctionOnNextCall(f);
@@ -29,6 +31,7 @@ function f(a) {
 }
 
 x = { [Symbol.toPrimitive]: () => FAIL };
+%PrepareFunctionForOptimization(f);
 f(1);
 f(1);
 %OptimizeFunctionOnNextCall(f);

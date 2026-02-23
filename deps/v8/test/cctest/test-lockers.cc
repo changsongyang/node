@@ -29,15 +29,12 @@
 
 #include <memory>
 
-#include "src/v8.h"
-
+#include "include/v8-extension.h"
+#include "include/v8-function.h"
+#include "include/v8-locker.h"
 #include "src/base/platform/platform.h"
-#include "src/compilation-cache.h"
-#include "src/execution.h"
-#include "src/isolate.h"
-#include "src/objects-inl.h"
-#include "src/unicode-inl.h"
-#include "src/utils.h"
+#include "src/objects/objects-inl.h"
+#include "src/strings/unicode-inl.h"
 #include "test/cctest/cctest.h"
 
 namespace {
@@ -51,17 +48,19 @@ class DeoptimizeCodeThread : public v8::base::Thread {
         context_(isolate, context),
         source_(trigger) {}
 
-  void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker locker(isolate_);
     isolate_->Enter();
-    v8::HandleScope handle_scope(isolate_);
-    v8::Local<v8::Context> context =
-        v8::Local<v8::Context>::New(isolate_, context_);
-    v8::Context::Scope context_scope(context);
-    CHECK_EQ(isolate_, v8::Isolate::GetCurrent());
-    // This code triggers deoptimization of some function that will be
-    // used in a different thread.
-    CompileRun(source_);
+    {
+      v8::HandleScope handle_scope(isolate_);
+      v8::Local<v8::Context> context =
+          v8::Local<v8::Context>::New(isolate_, context_);
+      v8::Context::Scope context_scope(context);
+      // This code triggers deoptimization of some function that will be
+      // used in a different thread.
+      CompileRun(source_);
+    }
     isolate_->Exit();
   }
 
@@ -72,8 +71,9 @@ class DeoptimizeCodeThread : public v8::base::Thread {
   const char* source_;
 };
 
-void UnlockForDeoptimization(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+void UnlockForDeoptimization(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  CHECK(i::ValidateCallbackInfo(info));
+  v8::Isolate* isolate = info.GetIsolate();
   // Gets the pointer to the thread that will trigger the deoptimization of the
   // code.
   DeoptimizeCodeThread* deoptimizer =
@@ -83,7 +83,7 @@ void UnlockForDeoptimization(const v8::FunctionCallbackInfo<v8::Value>& args) {
     isolate->Exit();
     v8::Unlocker unlocker(isolate);
     // Starts the deoptimizing thread.
-    deoptimizer->Start();
+    CHECK(deoptimizer->Start());
     // Waits for deoptimization to finish.
     deoptimizer->Join();
   }
@@ -93,8 +93,9 @@ void UnlockForDeoptimization(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 void UnlockForDeoptimizationIfReady(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  CHECK(i::ValidateCallbackInfo(info));
+  v8::Isolate* isolate = info.GetIsolate();
   bool* ready_to_deoptimize = reinterpret_cast<bool*>(isolate->GetData(1));
   if (*ready_to_deoptimize) {
     // The test should enter here only once, so put the flag back to false.
@@ -108,7 +109,7 @@ void UnlockForDeoptimizationIfReady(
       isolate->Exit();
       v8::Unlocker unlocker(isolate);
       // Starts the thread that deoptimizes the function.
-      deoptimizer->Start();
+      CHECK(deoptimizer->Start());
       // Waits for the deoptimizing thread to finish.
       deoptimizer->Join();
     }
@@ -124,7 +125,7 @@ namespace internal {
 namespace test_lockers {
 
 TEST(LazyDeoptimizationMultithread) {
-  i::FLAG_allow_natives_syntax = true;
+  i::v8_flags.allow_natives_syntax = true;
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -157,6 +158,7 @@ TEST(LazyDeoptimizationMultithread) {
         "function f() { g(); return obj.x; }"
         "function g() { if (b) { unlock_for_deoptimization(); } }"
         "%NeverOptimizeFunction(g);"
+        "%PrepareFunctionForOptimization(f);"
         "f(); f(); %OptimizeFunctionOnNextCall(f);"
         "f();");
 
@@ -176,7 +178,7 @@ TEST(LazyDeoptimizationMultithread) {
 }
 
 TEST(LazyDeoptimizationMultithreadWithNatives) {
-  i::FLAG_allow_natives_syntax = true;
+  i::v8_flags.allow_natives_syntax = true;
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -212,6 +214,7 @@ TEST(LazyDeoptimizationMultithreadWithNatives) {
         "function g() { "
         "  unlock_for_deoptimization(); }"
         "%NeverOptimizeFunction(g);"
+        "%PrepareFunctionForOptimization(f);"
         "f(); f(); %OptimizeFunctionOnNextCall(f);");
 
     // Trigger the unlocking.
@@ -231,7 +234,7 @@ TEST(LazyDeoptimizationMultithreadWithNatives) {
 }
 
 TEST(EagerDeoptimizationMultithread) {
-  i::FLAG_allow_natives_syntax = true;
+  i::v8_flags.allow_natives_syntax = true;
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -262,6 +265,7 @@ TEST(EagerDeoptimizationMultithread) {
     // Optimizes a function f, which will be deoptimized by another thread.
     CompileRun(
         "function f(obj) { unlock_for_deoptimization(); return obj.x; }"
+        "%PrepareFunctionForOptimization(f);"
         "f({x: 1}); f({x: 1});"
         "%OptimizeFunctionOnNextCall(f);"
         "f({x: 1});");
@@ -290,11 +294,11 @@ class KangarooThread : public v8::base::Thread {
         isolate_(isolate),
         context_(isolate, context) {}
 
-  void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     {
       v8::Locker locker(isolate_);
       v8::Isolate::Scope isolate_scope(isolate_);
-      CHECK_EQ(isolate_, v8::Isolate::GetCurrent());
       v8::HandleScope scope(isolate_);
       v8::Local<v8::Context> context =
           v8::Local<v8::Context>::New(isolate_, context_);
@@ -335,11 +339,10 @@ TEST(KangarooIsolates) {
     v8::HandleScope handle_scope(isolate);
     v8::Local<v8::Context> context = v8::Context::New(isolate);
     v8::Context::Scope context_scope(context);
-    CHECK_EQ(isolate, v8::Isolate::GetCurrent());
     CompileRun("function getValue() { return 30; }");
     thread1.reset(new KangarooThread(isolate, context));
   }
-  thread1->Start();
+  CHECK(thread1->Start());
   thread1->Join();
 }
 
@@ -362,11 +365,11 @@ class JoinableThread {
       thread_(this) {
   }
 
-  virtual ~JoinableThread() {}
+  virtual ~JoinableThread() = default;
+  JoinableThread(const JoinableThread&) = delete;
+  JoinableThread& operator=(const JoinableThread&) = delete;
 
-  void Start() {
-    thread_.Start();
-  }
+  void Start() { CHECK(thread_.Start()); }
 
   void Join() {
     semaphore_.Wait();
@@ -382,7 +385,7 @@ class JoinableThread {
         : Thread(Options(joinable_thread->name_)),
           joinable_thread_(joinable_thread) {}
 
-    virtual void Run() {
+    void Run() override {
       joinable_thread_->Run();
       joinable_thread_->semaphore_.Signal();
     }
@@ -396,8 +399,6 @@ class JoinableThread {
   ThreadWithSemaphore thread_;
 
   friend class ThreadWithSemaphore;
-
-  DISALLOW_COPY_AND_ASSIGN(JoinableThread);
 };
 
 
@@ -408,12 +409,12 @@ class IsolateLockingThreadWithLocalContext : public JoinableThread {
       isolate_(isolate) {
   }
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker locker(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
     LocalContext local_context(isolate_);
-    CHECK_EQ(isolate_, v8::Isolate::GetCurrent());
     CalcFibAndCheck(local_context.local());
   }
  private:
@@ -436,12 +437,7 @@ static void StartJoinAndDeleteThreads(
 
 // Run many threads all locking on the same isolate
 TEST(IsolateLockingStress) {
-  i::FLAG_always_opt = false;
-#if V8_TARGET_ARCH_MIPS
-  const int kNThreads = 50;
-#else
   const int kNThreads = 100;
-#endif
   std::vector<JoinableThread*> threads;
   threads.reserve(kNThreads);
   v8::Isolate::CreateParams create_params;
@@ -460,7 +456,8 @@ class IsolateNestedLockingThread : public JoinableThread {
   explicit IsolateNestedLockingThread(v8::Isolate* isolate)
     : JoinableThread("IsolateNestedLocking"), isolate_(isolate) {
   }
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
@@ -481,12 +478,7 @@ class IsolateNestedLockingThread : public JoinableThread {
 
 // Run  many threads with nested locks
 TEST(IsolateNestedLocking) {
-  i::FLAG_always_opt = false;
-#if V8_TARGET_ARCH_MIPS
-  const int kNThreads = 50;
-#else
   const int kNThreads = 100;
-#endif
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -508,7 +500,8 @@ class SeparateIsolatesLocksNonexclusiveThread : public JoinableThread {
       isolate1_(isolate1), isolate2_(isolate2) {
   }
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock(isolate1_);
     v8::Isolate::Scope isolate_scope(isolate1_);
     v8::HandleScope handle_scope(isolate1_);
@@ -527,8 +520,7 @@ class SeparateIsolatesLocksNonexclusiveThread : public JoinableThread {
 
 // Run parallel threads that lock and access different isolates in parallel
 TEST(SeparateIsolatesLocksNonexclusive) {
-  i::FLAG_always_opt = false;
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_S390
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_S390X
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -556,7 +548,8 @@ class LockIsolateAndCalculateFibSharedContextThread : public JoinableThread {
         isolate_(isolate),
         context_(isolate, context) {}
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
@@ -577,7 +570,8 @@ class LockerUnlockerThread : public JoinableThread {
       isolate_(isolate) {
   }
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     isolate_->DiscardThreadSpecificMetadata();  // No-op
     {
       v8::Locker lock(isolate_);
@@ -612,8 +606,7 @@ class LockerUnlockerThread : public JoinableThread {
 
 // Use unlocker inside of a Locker, multiple threads.
 TEST(LockerUnlocker) {
-  i::FLAG_always_opt = false;
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_S390
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_S390X
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -637,7 +630,8 @@ class LockTwiceAndUnlockThread : public JoinableThread {
       isolate_(isolate) {
   }
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
@@ -670,8 +664,7 @@ class LockTwiceAndUnlockThread : public JoinableThread {
 
 // Use Unlocker inside two Lockers.
 TEST(LockTwiceAndUnlock) {
-  i::FLAG_always_opt = false;
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_S390
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_S390X
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -697,7 +690,8 @@ class LockAndUnlockDifferentIsolatesThread : public JoinableThread {
       isolate2_(isolate2) {
   }
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     std::unique_ptr<LockIsolateAndCalculateFibSharedContextThread> thread;
     v8::Locker lock1(isolate1_);
     CHECK(v8::Locker::IsLocked(isolate1_));
@@ -713,10 +707,11 @@ class LockAndUnlockDifferentIsolatesThread : public JoinableThread {
       thread.reset(new LockIsolateAndCalculateFibSharedContextThread(isolate1_,
                                                                      context1));
     }
-    v8::Locker lock2(isolate2_);
-    CHECK(v8::Locker::IsLocked(isolate1_));
-    CHECK(v8::Locker::IsLocked(isolate2_));
     {
+      v8::Unlocker unlock1(isolate1_);
+      v8::Locker lock2(isolate2_);
+      CHECK(!v8::Locker::IsLocked(isolate1_));
+      CHECK(v8::Locker::IsLocked(isolate2_));
       v8::Isolate::Scope isolate_scope(isolate2_);
       v8::HandleScope handle_scope(isolate2_);
       v8::Local<v8::Context> context2 = v8::Context::New(isolate2_);
@@ -724,7 +719,6 @@ class LockAndUnlockDifferentIsolatesThread : public JoinableThread {
         v8::Context::Scope context_scope(context2);
         CalcFibAndCheck(context2);
       }
-      v8::Unlocker unlock1(isolate1_);
       CHECK(!v8::Locker::IsLocked(isolate1_));
       CHECK(v8::Locker::IsLocked(isolate2_));
       v8::Context::Scope context_scope(context2);
@@ -760,7 +754,8 @@ class LockUnlockLockThread : public JoinableThread {
         isolate_(isolate),
         context_(isolate, context) {}
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock1(isolate_);
     CHECK(v8::Locker::IsLocked(isolate_));
     CHECK(!v8::Locker::IsLocked(CcTest::isolate()));
@@ -798,11 +793,7 @@ class LockUnlockLockThread : public JoinableThread {
 
 // Locker inside an Unlocker inside a Locker.
 TEST(LockUnlockLockMultithreaded) {
-#if V8_TARGET_ARCH_MIPS
-  const int kNThreads = 50;
-#else
   const int kNThreads = 100;
-#endif
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -827,7 +818,8 @@ class LockUnlockLockDefaultIsolateThread : public JoinableThread {
       : JoinableThread("LockUnlockLockDefaultIsolateThread"),
         context_(CcTest::isolate(), context) {}
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Locker lock1(CcTest::isolate());
     {
       v8::Isolate::Scope isolate_scope(CcTest::isolate());
@@ -858,24 +850,21 @@ class LockUnlockLockDefaultIsolateThread : public JoinableThread {
 
 // Locker inside an Unlocker inside a Locker for default isolate.
 TEST(LockUnlockLockDefaultIsolateMultithreaded) {
-#if V8_TARGET_ARCH_MIPS
-  const int kNThreads = 50;
-#else
   const int kNThreads = 100;
-#endif
-  Local<v8::Context> context;
   std::vector<JoinableThread*> threads;
   threads.reserve(kNThreads);
+  CcTest::isolate()->Exit();
   {
     v8::Locker locker_(CcTest::isolate());
     v8::Isolate::Scope isolate_scope(CcTest::isolate());
     v8::HandleScope handle_scope(CcTest::isolate());
-    context = v8::Context::New(CcTest::isolate());
+    Local<v8::Context> context = v8::Context::New(CcTest::isolate());
     for (int i = 0; i < kNThreads; i++) {
       threads.push_back(new LockUnlockLockDefaultIsolateThread(context));
     }
   }
   StartJoinAndDeleteThreads(threads);
+  CcTest::isolate()->Enter();
 }
 
 
@@ -914,7 +903,8 @@ class IsolateGenesisThread : public JoinableThread {
       extension_names_(extension_names)
   {}
 
-  virtual void Run() {
+  void Run() override {
+    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Isolate::CreateParams create_params;
     create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
     v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -936,34 +926,17 @@ class IsolateGenesisThread : public JoinableThread {
 // Test installing extensions in separate isolates concurrently.
 // http://code.google.com/p/v8/issues/detail?id=1821
 TEST(ExtensionsRegistration) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
-  const int kNThreads = 10;
-#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
-  const int kNThreads = 4;
-#elif V8_TARGET_ARCH_S390 && V8_TARGET_ARCH_32_BIT
+#if V8_TARGET_ARCH_ARM
   const int kNThreads = 10;
 #else
   const int kNThreads = 40;
 #endif
-  v8::RegisterExtension(new v8::Extension("test0",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test1",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test2",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test3",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test4",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test5",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test6",
-                                          kSimpleExtensionSource));
-  v8::RegisterExtension(new v8::Extension("test7",
-                                          kSimpleExtensionSource));
-  const char* extension_names[] = { "test0", "test1",
-                                    "test2", "test3", "test4",
-                                    "test5", "test6", "test7" };
+  const char* extension_names[] = {"test0", "test1", "test2", "test3",
+                                   "test4", "test5", "test6", "test7"};
+  for (const char* name : extension_names) {
+    v8::RegisterExtension(
+        std::make_unique<v8::Extension>(name, kSimpleExtensionSource));
+  }
   std::vector<JoinableThread*> threads;
   threads.reserve(kNThreads);
   for (int i = 0; i < kNThreads; i++) {

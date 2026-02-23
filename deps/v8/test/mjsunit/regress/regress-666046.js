@@ -29,10 +29,13 @@ gc();
 
 // Ensure |proto| is marked as "should be fast".
 var o = new A();
+%EnsureFeedbackVectorForFunction(foo);
 foo(o);
 foo(o);
 foo(o);
-assertTrue(%HasFastProperties(proto));
+assertEquals(!%IsDictPropertyConstTrackingEnabled(),
+             %HasFastProperties(proto));
+
 
 // Contruct a double value that looks like a tagged pointer.
 var buffer = new ArrayBuffer(8);
@@ -48,7 +51,8 @@ proto.a4 = {a: 0};
 delete proto.a4;
 
 // |proto| must sill be fast.
-assertTrue(%HasFastProperties(proto));
+assertEquals(!%IsDictPropertyConstTrackingEnabled(),
+             %HasFastProperties(proto));
 
 // Add a double field instead of deleted a4 that looks like a tagged pointer.
 proto.boom = boom;

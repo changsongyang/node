@@ -1,3 +1,4 @@
+from __future__ import print_function
 # Copyright 2008 the V8 project authors. All rights reserved.
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -29,8 +30,10 @@ import test
 import os
 from os.path import join, exists, basename, isdir
 import re
+from functools import reduce
 
 FLAGS_PATTERN = re.compile(r"//\s+Flags:(.*)")
+ENV_PATTERN = re.compile(r"//\s+Env:(.*)")
 
 class MessageTestCase(test.TestCase):
 
@@ -41,6 +44,7 @@ class MessageTestCase(test.TestCase):
     self.config = config
     self.arch = arch
     self.mode = mode
+    self.parallel = True
 
   def IgnoreLine(self, str):
     """Ignore empty lines and valgrind output."""
@@ -48,7 +52,7 @@ class MessageTestCase(test.TestCase):
     else: return str.startswith('==') or str.startswith('**')
 
   def IsFailureOutput(self, output):
-    f = file(self.expected)
+    f = open(self.expected)
     # Skip initial '#' comment and spaces
     #for line in f:
     #  if (not line.startswith('#')) and (not line.strip()):
@@ -67,24 +71,33 @@ class MessageTestCase(test.TestCase):
     raw_lines = (output.stdout + output.stderr).split('\n')
     outlines = [ s for s in raw_lines if not self.IgnoreLine(s) ]
     if len(outlines) != len(patterns):
-      print "length differs."
-      print "expect=%d" % len(patterns)
-      print "actual=%d" % len(outlines)
-      print "patterns:"
-      for i in xrange(len(patterns)):
-        print "pattern = %s" % patterns[i]
-      print "outlines:"
-      for i in xrange(len(outlines)):
-        print "outline = %s" % outlines[i]
+      print("length differs.")
+      print("expect=%d" % len(patterns))
+      print("actual=%d" % len(outlines))
+      print("patterns:")
+      for i in range(len(patterns)):
+        print("pattern = %s" % patterns[i])
+      print("outlines:")
+      for i in range(len(outlines)):
+        print("outline = %s" % outlines[i])
       return True
-    for i in xrange(len(patterns)):
+    for i in range(len(patterns)):
       if not re.match(patterns[i], outlines[i]):
-        print "match failed"
-        print "line=%d" % i
-        print "expect=%s" % patterns[i]
-        print "actual=%s" % outlines[i]
+        print("match failed")
+        print("line=%d" % i)
+        print("expect=%s" % patterns[i])
+        print("actual=%s" % outlines[i])
         return True
     return False
+
+  def _parse_source_env(self, source):
+    env_match = ENV_PATTERN.search(source)
+    env = {}
+    if env_match:
+      for env_pair in env_match.group(1).strip().split():
+        var, value = env_pair.split('=')
+        env[var] = value
+    return env
 
   def GetLabel(self):
     return "%s %s" % (self.mode, self.GetName())
@@ -92,14 +105,18 @@ class MessageTestCase(test.TestCase):
   def GetName(self):
     return self.path[-1]
 
-  def GetCommand(self):
+  def GetRunConfiguration(self):
     result = [self.config.context.GetVm(self.arch, self.mode)]
     source = open(self.file).read()
     flags_match = FLAGS_PATTERN.search(source)
+    envs = self._parse_source_env(source)
     if flags_match:
       result += flags_match.group(1).strip().split()
     result.append(self.file)
-    return result
+    return {
+        'command': result,
+        'envs': envs
+    }
 
   def GetSource(self):
     return (open(self.file).read()
@@ -118,13 +135,13 @@ class MessageTestConfiguration(test.TestConfiguration):
   def ListTests(self, current_path, path, arch, mode):
     all_tests = [current_path + [t] for t in self.Ls(self.root)]
     result = []
-    for test in all_tests:
-      if self.Contains(path, test):
-        file_path = join(self.root, reduce(join, test[1:], ''))
+    for tst in all_tests:
+      if self.Contains(path, tst):
+        file_path = join(self.root, reduce(join, tst[1:], ''))
         output_path = file_path[:file_path.rfind('.')] + '.out'
         if not exists(output_path):
           raise Exception("Could not find %s" % output_path)
-        result.append(MessageTestCase(test, file_path, output_path,
+        result.append(MessageTestCase(tst, file_path, output_path,
                                       arch, mode, self.context, self))
     return result
 

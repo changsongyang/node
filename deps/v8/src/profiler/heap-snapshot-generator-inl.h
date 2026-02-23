@@ -6,58 +6,49 @@
 #define V8_PROFILER_HEAP_SNAPSHOT_GENERATOR_INL_H_
 
 #include "src/profiler/heap-snapshot-generator.h"
+// Include the non-inl header before the rest of the headers.
 
 #include "src/profiler/heap-profiler.h"
-#include "src/string-hasher-inl.h"
+#include "src/strings/string-hasher-inl.h"
 
 namespace v8 {
 namespace internal {
-
 
 HeapEntry* HeapGraphEdge::from() const {
   return &snapshot()->entries()[from_index()];
 }
 
-
-Isolate* HeapGraphEdge::isolate() const {
-  return snapshot()->profiler()->isolate();
-}
-
+Isolate* HeapGraphEdge::isolate() const { return to_entry_->isolate(); }
 
 HeapSnapshot* HeapGraphEdge::snapshot() const {
   return to_entry_->snapshot();
 }
 
-
-int HeapEntry::index() const {
-  return static_cast<int>(this - &snapshot_->entries().front());
-}
-
-
 int HeapEntry::set_children_index(int index) {
-  children_index_ = index;
+  // Note: children_count_ and children_end_index_ are parts of a union.
   int next_index = index + children_count_;
-  children_count_ = 0;
+  children_end_index_ = index;
   return next_index;
 }
 
 void HeapEntry::add_child(HeapGraphEdge* edge) {
-  *(children_begin() + children_count_++) = edge;
+  snapshot_->children()[children_end_index_++] = edge;
 }
 
-HeapGraphEdge* HeapEntry::child(int i) { return *(children_begin() + i); }
+HeapGraphEdge* HeapEntry::child(int i) { return children_begin()[i]; }
 
-std::deque<HeapGraphEdge*>::iterator HeapEntry::children_begin() {
-  DCHECK_GE(children_index_, 0);
-  SLOW_DCHECK(
-      children_index_ < static_cast<int>(snapshot_->children().size()) ||
-      (children_index_ == static_cast<int>(snapshot_->children().size()) &&
-       children_count_ == 0));
-  return snapshot_->children().begin() + children_index_;
+std::vector<HeapGraphEdge*>::iterator HeapEntry::children_begin() const {
+  return index_ == 0 ? snapshot_->children().begin()
+                     : snapshot_->entries()[index_ - 1].children_end();
 }
 
-std::deque<HeapGraphEdge*>::iterator HeapEntry::children_end() {
-  return children_begin() + children_count_;
+std::vector<HeapGraphEdge*>::iterator HeapEntry::children_end() const {
+  DCHECK_GE(children_end_index_, 0);
+  return snapshot_->children().begin() + children_end_index_;
+}
+
+int HeapEntry::children_count() const {
+  return static_cast<int>(children_end() - children_begin());
 }
 
 Isolate* HeapEntry::isolate() const { return snapshot_->profiler()->isolate(); }
@@ -65,8 +56,7 @@ Isolate* HeapEntry::isolate() const { return snapshot_->profiler()->isolate(); }
 uint32_t HeapSnapshotJSONSerializer::StringHash(const void* string) {
   const char* s = reinterpret_cast<const char*>(string);
   int len = static_cast<int>(strlen(s));
-  return StringHasher::HashSequentialString(s, len,
-                                            v8::internal::kZeroHashSeed);
+  return StringHasher::HashSequentialString(s, len, HashSeed::Default());
 }
 
 int HeapSnapshotJSONSerializer::to_node_index(const HeapEntry* e) {
@@ -74,7 +64,9 @@ int HeapSnapshotJSONSerializer::to_node_index(const HeapEntry* e) {
 }
 
 int HeapSnapshotJSONSerializer::to_node_index(int entry_index) {
-  return entry_index * kNodeFieldsCount;
+  return entry_index * (trace_function_count_
+                            ? kNodeFieldsCountWithTraceNodeId
+                            : kNodeFieldsCountWithoutTraceNodeId);
 }
 
 }  // namespace internal

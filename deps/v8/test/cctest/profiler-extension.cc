@@ -28,6 +28,8 @@
 // Tests of profiles generator and utilities.
 
 #include "test/cctest/profiler-extension.h"
+
+#include "include/v8-template.h"
 #include "test/cctest/cctest.h"
 
 namespace v8 {
@@ -42,38 +44,40 @@ const char* ProfilerExtension::kSource =
 
 v8::Local<v8::FunctionTemplate> ProfilerExtension::GetNativeFunctionTemplate(
     v8::Isolate* isolate, v8::Local<v8::String> name) {
-  v8::Local<v8::Context> context = isolate->GetCurrentContext();
-  if (name->Equals(context, v8_str(isolate, "startProfiling")).FromJust()) {
+  if (name->StrictEquals(v8_str(isolate, "startProfiling"))) {
     return v8::FunctionTemplate::New(isolate,
                                      ProfilerExtension::StartProfiling);
   }
-  if (name->Equals(context, v8_str(isolate, "stopProfiling")).FromJust()) {
+  if (name->StrictEquals(v8_str(isolate, "stopProfiling"))) {
     return v8::FunctionTemplate::New(isolate, ProfilerExtension::StopProfiling);
   }
-  if (name->Equals(context, v8_str(isolate, "collectSample")).FromJust()) {
+  if (name->StrictEquals(v8_str(isolate, "collectSample"))) {
     return v8::FunctionTemplate::New(isolate, ProfilerExtension::CollectSample);
   }
   UNREACHABLE();
 }
 
 void ProfilerExtension::StartProfiling(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  CHECK(i::ValidateCallbackInfo(info));
   last_profile = nullptr;
-  profiler_->StartProfiling(args.Length() > 0
-                                ? args[0].As<v8::String>()
-                                : v8::String::Empty(args.GetIsolate()));
+  profiler_->StartProfiling(info.Length() > 0
+                                ? info[0].As<v8::String>()
+                                : v8::String::Empty(info.GetIsolate()));
 }
 
 void ProfilerExtension::StopProfiling(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  CHECK(i::ValidateCallbackInfo(info));
   last_profile = profiler_->StopProfiling(
-      args.Length() > 0 ? args[0].As<v8::String>()
-                        : v8::String::Empty(args.GetIsolate()));
+      info.Length() > 0 ? info[0].As<v8::String>()
+                        : v8::String::Empty(info.GetIsolate()));
 }
 
 void ProfilerExtension::CollectSample(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::CpuProfiler::CollectSample(args.GetIsolate());
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  CHECK(i::ValidateCallbackInfo(info));
+  v8::CpuProfiler::CollectSample(info.GetIsolate());
 }
 
 }  // namespace internal

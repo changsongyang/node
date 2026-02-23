@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-# Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2016-2020 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -28,6 +28,7 @@
 # Westmere	9.50/+45%	3.35
 # Sandy Bridge	10.5/+47%	3.20
 # Haswell	8.15/+50%	2.83
+# Skylake	7.53/+22%	2.75
 # Silvermont	17.4/+36%	8.35
 # Goldmont	13.4/+40%	4.36
 # Sledgehammer	10.2/+54%
@@ -39,29 +40,28 @@ $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 push(@INC,"${dir}","${dir}../../perlasm");
 require "x86asm.pl";
 
-$output=pop;
-open STDOUT,">$output";
+$output = pop and open STDOUT,">$output";
 
-&asm_init($ARGV[0],"chacha-x86.pl",$ARGV[$#ARGV] eq "386");
+&asm_init($ARGV[0],$ARGV[$#ARGV] eq "386");
 
 $xmm=$ymm=0;
 for (@ARGV) { $xmm=1 if (/-DOPENSSL_IA32_SSE2/); }
 
 $ymm=1 if ($xmm &&
 		`$ENV{CC} -Wa,-v -c -o /dev/null -x assembler /dev/null 2>&1`
-			=~ /GNU assembler version ([2-9]\.[0-9]+)/ &&
-		($gasver=$1)>=2.19);	# first version supporting AVX
+			=~ /GNU assembler version ([0-9]+)\.([0-9]+)/ &&
+		($gasver = $1 + $2/100.0) >= 2.19);	# first version supporting AVX
 
 $ymm=1 if ($xmm && !$ymm && $ARGV[0] eq "win32n" &&
-		`nasm -v 2>&1` =~ /NASM version ([2-9]\.[0-9]+)/ &&
-		$1>=2.03);	# first version supporting AVX
+		`nasm -v 2>&1` =~ /NASM version ([0-9]+)\.([0-9]+)/ &&
+		$1 + $2/100.0 >= 2.03);	# first version supporting AVX
 
 $ymm=1 if ($xmm && !$ymm && $ARGV[0] eq "win32" &&
 		`ml 2>&1` =~ /Version ([0-9]+)\./ &&
 		$1>=10);	# first version supporting AVX
 
 $ymm=1 if ($xmm && !$ymm &&
-		`$ENV{CC} -v 2>&1` =~ /((?:^clang|LLVM) version|based on LLVM) ([3-9]\.[0-9]+)/ &&
+		`$ENV{CC} -v 2>&1` =~ /((?:clang|LLVM) version|based on LLVM) ([0-9]+\.[0-9]+)/ &&
 		$2>=3.0);	# first version supporting AVX
 
 $a="eax";
@@ -1151,4 +1151,4 @@ sub XOPROUND {
 
 &asm_finish();
 
-close STDOUT;
+close STDOUT or die "error closing STDOUT: $!";

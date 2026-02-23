@@ -25,8 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc --noalways-opt
-
+// Flags: --allow-natives-syntax --expose-gc
 function isHoley(obj) {
   if (%HasHoleyElements(obj)) return true;
   return false;
@@ -38,8 +37,8 @@ function assertHoley(obj, name_opt) {
 
 function create_array(arg) {
   return new Array(arg);
-}
-
+};
+%PrepareFunctionForOptimization(create_array);
 obj = create_array(0);
 assertHoley(obj);
 create_array(0);
@@ -49,9 +48,9 @@ assertHoley(obj);
 
 // The code below would assert in debug or crash in release
 function f(length) {
-  return new Array(length)
-}
-
+  return new Array(length);
+};
+%PrepareFunctionForOptimization(f);
 f(0);
 f(0);
 %OptimizeFunctionOnNextCall(f);

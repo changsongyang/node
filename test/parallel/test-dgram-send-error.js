@@ -5,6 +5,7 @@ const assert = require('assert');
 const dgram = require('dgram');
 const { internalBinding } = require('internal/test/binding');
 const { UV_UNKNOWN } = internalBinding('uv');
+const { getSystemErrorName } = require('util');
 const { kStateSymbol } = require('internal/dgram');
 const mockError = new Error('mock DNS error');
 
@@ -22,23 +23,23 @@ function getSocket(callback) {
   return socket;
 }
 
-getSocket((socket) => {
+getSocket(common.mustCall((socket) => {
   socket.on('error', common.mustCall((err) => {
     socket.close();
     assert.strictEqual(err, mockError);
   }));
 
   socket.send('foo', socket.address().port, 'localhost');
-});
+}));
 
-getSocket((socket) => {
+getSocket(common.mustCall((socket) => {
   const callback = common.mustCall((err) => {
     socket.close();
     assert.strictEqual(err, mockError);
   });
 
   socket.send('foo', socket.address().port, 'localhost', callback);
-});
+}));
 
 {
   const socket = dgram.createSocket('udp4');
@@ -50,7 +51,7 @@ getSocket((socket) => {
     const callback = common.mustCall((err) => {
       socket.close();
       assert.strictEqual(err.code, 'UNKNOWN');
-      assert.strictEqual(err.errno, 'UNKNOWN');
+      assert.strictEqual(getSystemErrorName(err.errno), 'UNKNOWN');
       assert.strictEqual(err.syscall, 'send');
       assert.strictEqual(err.address, common.localhostIPv4);
       assert.strictEqual(err.port, port);

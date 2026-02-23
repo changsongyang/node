@@ -28,13 +28,13 @@ const N = 200;
 let recv = '';
 let chars_recved = 0;
 
-const server = net.createServer(function(connection) {
+const server = net.createServer((connection) => {
   function write(j) {
     if (j >= N) {
       connection.end();
       return;
     }
-    setTimeout(function() {
+    setTimeout(() => {
       connection.write('C');
       write(j + 1);
     }, 10);
@@ -42,50 +42,50 @@ const server = net.createServer(function(connection) {
   write(0);
 });
 
-server.on('listening', function() {
-  const client = net.createConnection(common.PORT);
+server.on('listening', common.mustCall(() => {
+  const client = net.createConnection(server.address().port);
   client.setEncoding('ascii');
-  client.on('data', function(d) {
+  client.on('data', (d) => {
     console.log(d);
     recv += d;
   });
 
-  setTimeout(function() {
+  setTimeout(common.mustCall(() => {
     chars_recved = recv.length;
     console.log(`pause at: ${chars_recved}`);
     assert.strictEqual(chars_recved > 1, true);
     client.pause();
-    setTimeout(function() {
+    setTimeout(common.mustCall(() => {
       console.log(`resume at: ${chars_recved}`);
       assert.strictEqual(chars_recved, recv.length);
       client.resume();
 
-      setTimeout(function() {
+      setTimeout(common.mustCall(() => {
         chars_recved = recv.length;
         console.log(`pause at: ${chars_recved}`);
         client.pause();
 
-        setTimeout(function() {
+        setTimeout(common.mustCall(() => {
           console.log(`resume at: ${chars_recved}`);
           assert.strictEqual(chars_recved, recv.length);
           client.resume();
 
-        }, 500);
+        }), 500);
 
-      }, 500);
+      }), 500);
 
-    }, 500);
+    }), 500);
 
-  }, 500);
+  }), 500);
 
-  client.on('end', function() {
+  client.on('end', () => {
     server.close();
     client.end();
   });
-});
-server.listen(common.PORT);
+}));
+server.listen(0);
 
-process.on('exit', function() {
+process.on('exit', () => {
   assert.strictEqual(recv.length, N);
   console.error('Exit');
 });

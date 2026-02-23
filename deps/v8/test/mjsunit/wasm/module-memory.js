@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm --expose-gc --stress-compaction --allow-natives-syntax
+// Flags: --expose-gc --stress-compaction --allow-natives-syntax
 
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 var kMemSize = 65536;
 
@@ -18,19 +17,19 @@ function genModule(memory) {
     .addBody([
       // main body: while(i) { if(mem[i]) return -1; i -= 4; } return 0;
       // TODO(titzer): this manual bytecode has a copy of test-run-wasm.cc
-      /**/ kExprLoop, kWasmStmt,           // --
-      /*  */ kExprGetLocal, 0,             // --
-      /*  */ kExprIf, kWasmStmt,           // --
-      /*    */ kExprGetLocal, 0,           // --
+      /**/ kExprLoop, kWasmVoid,           // --
+      /*  */ kExprLocalGet, 0,             // --
+      /*  */ kExprIf, kWasmVoid,           // --
+      /*    */ kExprLocalGet, 0,           // --
       /*    */ kExprI32LoadMem, 0, 0,      // --
-      /*    */ kExprIf, kWasmStmt,         // --
+      /*    */ kExprIf, kWasmVoid,         // --
       /*      */ kExprI32Const, 127,       // --
       /*      */ kExprReturn,              // --
       /*      */ kExprEnd,                 // --
-      /*    */ kExprGetLocal, 0,           // --
+      /*    */ kExprLocalGet, 0,           // --
       /*    */ kExprI32Const, 4,           // --
       /*    */ kExprI32Sub,                // --
-      /*    */ kExprSetLocal, 0,           // --
+      /*    */ kExprLocalSet, 0,           // --
       /*    */ kExprBr, 1,                 // --
       /*    */ kExprEnd,                   // --
       /*  */ kExprEnd,                     // --
@@ -53,9 +52,7 @@ function testPokeMemory() {
   var array = new Int8Array(buffer);
   assertEquals(kMemSize, array.length);
 
-  for (var i = 0; i < kMemSize; i++) {
-    assertEquals(0, array[i]);
-  }
+  assertTrue(array.every((e => e === 0)));
 
   for (var i = 0; i < 10; i++) {
     assertEquals(0, main(kMemSize - 4));
@@ -100,9 +97,7 @@ function testPokeOuterMemory() {
   var array = new Int8Array(buffer.buffer);
   assertEquals(kMemSize, array.length);
 
-  for (var i = 0; i < kMemSize; i++) {
-    assertEquals(0, array[i]);
-  }
+  assertTrue(array.every((e => e === 0)));
 
   for (var i = 0; i < 10; i++) {
     assertEquals(0, main(kMemSize - 4));
@@ -137,69 +132,77 @@ testOuterMemorySurvivalAcrossGc();
 function testOOBThrows() {
   var builder = new WasmModuleBuilder();
 
-  builder.addMemory(1, 1, true);
+  builder.addMemory(1, 1);
   builder.addFunction("geti", kSig_i_ii)
     .addBody([
-      kExprGetLocal, 0,
-      kExprGetLocal, 1,
+      kExprLocalGet, 0,
+      kExprLocalGet, 1,
       kExprI32LoadMem, 0, 0,
       kExprI32StoreMem, 0, 0,
-      kExprGetLocal, 1,
+      kExprLocalGet, 1,
       kExprI32LoadMem, 0, 0,
     ])
     .exportFunc();
 
   var module = builder.instantiate();
-  var offset;
 
-  function read() { return module.exports.geti(0, offset); }
-  function write() { return module.exports.geti(offset, 0); }
+  let read = offset => module.exports.geti(0, offset);
+  let write = offset =>  module.exports.geti(offset, 0);
 
-  for (offset = 0; offset < 65533; offset++) {
-    assertEquals(0, read());
-    assertEquals(0, write());
-  }
+  assertEquals(0, read(65532));
+  assertEquals(0, write(65532));
 
   // Note that this test might be run concurrently in multiple Isolates, which
   // makes an exact comparison of the expected trap count unreliable. But is is
   // still possible to check the lower bound for the expected trap count.
-  for (offset = 65534; offset < 66536; offset++) {
+  for (let offset = kMemSize - 3; offset <= kMemSize; offset++) {
     const trap_count = %GetWasmRecoveredTrapCount();
-    assertTraps(kTrapMemOutOfBounds, read);
-    assertTraps(kTrapMemOutOfBounds, write);
+    assertTraps(kTrapMemOutOfBounds, () => read(offset));
+    assertTraps(kTrapMemOutOfBounds, () => write(offset));
     if (%IsWasmTrapHandlerEnabled()) {
-      assertTrue(trap_count + 2 <= %GetWasmRecoveredTrapCount());
+      if (%IsWasmPartialOOBWriteNoop()) {
+        assertTrue(trap_count + 2 <= %GetWasmRecoveredTrapCount());
+      } else {
+        assertTrue(trap_count + 1 <= %GetWasmRecoveredTrapCount());
+      }
     }
   }
 }
 
 testOOBThrows();
 
-function testAddressSpaceLimit() {
-  // 1TiB + 4 GiB, see wasm-memory.h
-  const kMaxAddressSpace = 1 * 1024 * 1024 * 1024 * 1024
-                         + 4 * 1024 * 1024 * 1024;
-  const kAddressSpacePerMemory = 8 * 1024 * 1024 * 1024;
+function testOOBThrowsInt8() {
+  var builder = new WasmModuleBuilder();
 
-  let last_memory;
-  try {
-    let memories = [];
-    let address_space = 0;
-    while (address_space <= kMaxAddressSpace + 1) {
-      last_memory = new WebAssembly.Memory({initial: 1})
-      memories.push(last_memory);
-      address_space += kAddressSpacePerMemory;
-    }
-  } catch (e) {
-    assertTrue(e instanceof RangeError);
-    return;
+  builder.addMemory(1, 1);
+  builder.addFunction("geti", kSig_i_ii)
+    .addBody([
+      kExprLocalGet, 0,
+      kExprLocalGet, 1,
+      kExprI32LoadMem, 0, 0,
+      kExprI32StoreMem8, 0, 0,
+      kExprLocalGet, 1,
+      kExprI32LoadMem, 0, 0,
+    ])
+    .exportFunc();
+
+  var module = builder.instantiate();
+
+  let write = offset =>  module.exports.geti(offset, 0);
+  assertEquals(0, write(65532));
+
+  // Note that this test might be run concurrently in multiple Isolates, which
+  // makes an exact comparison of the expected trap count unreliable. But is is
+  // still possible to check the lower bound for the expected trap count.
+  let offset = kMemSize
+  const trap_count = %GetWasmRecoveredTrapCount();
+
+  assertTraps(kTrapMemOutOfBounds, () => write(offset));
+
+  // For Int8 stores, explicit OOB checks are removed, so they will always trap.
+  if (%IsWasmTrapHandlerEnabled()) {
+      assertTrue(trap_count + 1 <= %GetWasmRecoveredTrapCount());
   }
-  // If we get here it's because our fallback behavior is working. We may not
-  // be using the fallback, in which case we would have thrown a RangeError in
-  // the previous block.
-  assertTrue(!%WasmMemoryHasFullGuardRegion(last_memory));
 }
 
-if(%IsWasmTrapHandlerEnabled()) {
-  testAddressSpaceLimit();
-}
+testOOBThrowsInt8();

@@ -36,6 +36,8 @@ function g() {
   return f(1,2,3);
 }
 
+%PrepareFunctionForOptimization(f);
+%PrepareFunctionForOptimization(g);
 assertEquals(3, g());
 assertEquals(3, g());
 %OptimizeFunctionOnNextCall(g);

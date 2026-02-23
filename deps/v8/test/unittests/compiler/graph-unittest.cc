@@ -6,7 +6,7 @@
 
 #include "src/compiler/node-properties.h"
 #include "src/heap/factory.h"
-#include "src/objects-inl.h"  // TODO(everyone): Make typer.h IWYU compliant.
+#include "src/objects/objects-inl.h"  // TODO(everyone): Make typer.h IWYU compliant.
 #include "test/unittests/compiler/node-test-utils.h"
 
 namespace v8 {
@@ -14,33 +14,54 @@ namespace internal {
 namespace compiler {
 
 GraphTest::GraphTest(int num_parameters)
-    : TestWithNativeContext(),
-      TestWithIsolateAndZone(),
-      canonical_(isolate()),
-      common_(zone()),
-      graph_(zone()),
-      js_heap_broker_(isolate(), zone()),
-      source_positions_(&graph_),
-      node_origins_(&graph_) {
-  graph()->SetStart(graph()->NewNode(common()->Start(num_parameters)));
-  graph()->SetEnd(graph()->NewNode(common()->End(1), graph()->start()));
+    : data_(std::make_unique<Data>(isolate(), zone(), num_parameters)) {}
+
+void GraphTest::Reset() {
+  int num_parameters = data_->num_parameters_;
+  data_ = nullptr;
+  zone()->Reset();
+  data_ = std::make_unique<Data>(isolate(), zone(), num_parameters);
 }
 
+GraphTest::Data::Data(Isolate* isolate, Zone* zone, int num_parameters)
+    : common_(zone),
+      graph_(zone),
+      broker_(isolate, zone),
+      broker_scope_(&broker_, isolate, zone),
+      current_broker_(&broker_),
+      source_positions_(&graph_),
+      node_origins_(&graph_),
+      num_parameters_(num_parameters) {
+  if (!PersistentHandlesScope::IsActive(isolate)) {
+    persistent_scope_.emplace(isolate);
+  }
+  graph_.SetStart(graph_.NewNode(common_.Start(num_parameters)));
+  graph_.SetEnd(graph_.NewNode(common_.End(1), graph_.start()));
+  broker_.SetTargetNativeContextRef(isolate->native_context());
+}
 
-GraphTest::~GraphTest() {}
-
+GraphTest::Data::~Data() {
+  if (persistent_scope_) {
+    persistent_scope_->Detach();
+  }
+}
 
 Node* GraphTest::Parameter(int32_t index) {
   return graph()->NewNode(common()->Parameter(index), graph()->start());
 }
 
+Node* GraphTest::Parameter(Type type, int32_t index) {
+  Node* node = GraphTest::Parameter(index);
+  NodeProperties::SetType(node, type);
+  return node;
+}
 
-Node* GraphTest::Float32Constant(volatile float value) {
+Node* GraphTest::Float32Constant(float value) {
   return graph()->NewNode(common()->Float32Constant(value));
 }
 
 
-Node* GraphTest::Float64Constant(volatile double value) {
+Node* GraphTest::Float64Constant(double value) {
   return graph()->NewNode(common()->Float64Constant(value));
 }
 
@@ -55,40 +76,50 @@ Node* GraphTest::Int64Constant(int64_t value) {
 }
 
 
-Node* GraphTest::NumberConstant(volatile double value) {
+Node* GraphTest::NumberConstant(double value) {
   return graph()->NewNode(common()->NumberConstant(value));
 }
 
-
-Node* GraphTest::HeapConstant(const Handle<HeapObject>& value) {
+Node* GraphTest::HeapConstantNoHole(const Handle<HeapObject>& value) {
+  CHECK(!IsAnyHole(*value));
   Node* node = graph()->NewNode(common()->HeapConstant(value));
-  Type type = Type::NewConstant(js_heap_broker(), value, zone());
+  Type type = Type::Constant(broker(), value, zone());
   NodeProperties::SetType(node, type);
   return node;
 }
 
+Node* GraphTest::HeapConstantHole(const Handle<HeapObject>& value) {
+  CHECK(IsAnyHole(*value));
+  Node* node = graph()->NewNode(common()->HeapConstant(value));
+  Type type = Type::Constant(broker(), value, zone());
+  NodeProperties::SetType(node, type);
+  return node;
+}
 
 Node* GraphTest::FalseConstant() {
-  return HeapConstant(factory()->false_value());
+  return HeapConstantNoHole(factory()->false_value());
 }
 
 
 Node* GraphTest::TrueConstant() {
-  return HeapConstant(factory()->true_value());
+  return HeapConstantNoHole(factory()->true_value());
 }
 
 
 Node* GraphTest::UndefinedConstant() {
-  return HeapConstant(factory()->undefined_value());
+  return HeapConstantNoHole(factory()->undefined_value());
 }
 
 
 Node* GraphTest::EmptyFrameState() {
   Node* state_values =
       graph()->NewNode(common()->StateValues(0, SparseInputMask::Dense()));
+  FrameStateFunctionInfo const* function_info =
+      common()->CreateFrameStateFunctionInfo(
+          FrameStateType::kUnoptimizedFunction, 0, 0, 0, {}, {});
   return graph()->NewNode(
-      common()->FrameState(BailoutId::None(), OutputFrameStateCombine::Ignore(),
-                           nullptr),
+      common()->FrameState(BytecodeOffset::None(),
+                           OutputFrameStateCombine::Ignore(), function_info),
       state_values, state_values, state_values, NumberConstant(0),
       UndefinedConstant(), graph()->start());
 }
@@ -113,15 +144,9 @@ Matcher<Node*> GraphTest::IsUndefinedConstant() {
 
 TypedGraphTest::TypedGraphTest(int num_parameters)
     : GraphTest(num_parameters),
-      typer_(isolate(), js_heap_broker(), Typer::kNoFlags, graph()) {}
+      typer_(broker(), Typer::kNoFlags, graph(), tick_counter()) {}
 
-TypedGraphTest::~TypedGraphTest() {}
-
-Node* TypedGraphTest::Parameter(Type type, int32_t index) {
-  Node* node = GraphTest::Parameter(index);
-  NodeProperties::SetType(node, type);
-  return node;
-}
+TypedGraphTest::~TypedGraphTest() = default;
 
 namespace graph_unittest {
 

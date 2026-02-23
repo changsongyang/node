@@ -20,12 +20,12 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-/*
- * The purpose of this test is to make sure that when forking a process,
- * sending a fd representing a UDP socket to the child and sending messages
- * to this endpoint, these messages are distributed to the parent and the
- * child process.
- */
+
+// The purpose of this test is to make sure that when forking a process,
+// sending a fd representing a UDP socket to the child and sending messages
+// to this endpoint, these messages are distributed to the parent and the
+// child process.
+
 
 const common = require('../common');
 if (common.isWindows)
@@ -38,10 +38,10 @@ const assert = require('assert');
 if (process.argv[2] === 'child') {
   let childServer;
 
-  process.once('message', function(msg, clusterServer) {
+  process.once('message', (msg, clusterServer) => {
     childServer = clusterServer;
 
-    childServer.once('message', function() {
+    childServer.once('message', () => {
       process.send('gotMessage');
       childServer.close();
     });
@@ -59,18 +59,18 @@ if (process.argv[2] === 'child') {
   let childGotMessage = false;
   let parentGotMessage = false;
 
-  parentServer.once('message', function(msg, rinfo) {
+  parentServer.once('message', (msg, rinfo) => {
     parentGotMessage = true;
     parentServer.close();
   });
 
-  parentServer.on('listening', function() {
+  parentServer.on('listening', () => {
     child.send('server', parentServer);
 
-    child.on('message', function(msg) {
+    child.on('message', (msg) => {
       if (msg === 'gotMessage') {
         childGotMessage = true;
-      } else if (msg = 'handlReceived') {
+      } else if (msg === 'handleReceived') {
         sendMessages();
       }
     });
@@ -79,11 +79,9 @@ if (process.argv[2] === 'child') {
   function sendMessages() {
     const serverPort = parentServer.address().port;
 
-    const timer = setInterval(function() {
-      /*
-       * Both the parent and the child got at least one message,
-       * test passed, clean up everything.
-       */
+    const timer = setInterval(() => {
+      // Both the parent and the child got at least one message,
+      // test passed, clean up everything.
       if (parentGotMessage && childGotMessage) {
         clearInterval(timer);
         client.close();
@@ -94,9 +92,7 @@ if (process.argv[2] === 'child') {
           msg.length,
           serverPort,
           '127.0.0.1',
-          function(err) {
-            assert.ifError(err);
-          }
+          common.mustSucceed(),
         );
       }
     }, 1);
@@ -104,7 +100,7 @@ if (process.argv[2] === 'child') {
 
   parentServer.bind(0, '127.0.0.1');
 
-  process.once('exit', function() {
+  process.once('exit', () => {
     assert(parentGotMessage);
     assert(childGotMessage);
   });

@@ -5,11 +5,13 @@
 .type	Camellia_EncryptBlock,@function
 .align	16
 Camellia_EncryptBlock:
+.cfi_startproc	
 	movl	$128,%eax
 	subl	%edi,%eax
 	movl	$3,%edi
 	adcl	$0,%edi
 	jmp	.Lenc_rounds
+.cfi_endproc	
 .size	Camellia_EncryptBlock,.-Camellia_EncryptBlock
 
 .globl	Camellia_EncryptBlock_Rounds
@@ -17,11 +19,22 @@ Camellia_EncryptBlock:
 .align	16
 .Lenc_rounds:
 Camellia_EncryptBlock_Rounds:
+.cfi_startproc	
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-32
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-40
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-48
 .Lenc_prologue:
 
 
@@ -53,18 +66,26 @@ Camellia_EncryptBlock_Rounds:
 	movl	%r11d,12(%r13)
 
 	movq	0(%rsp),%r15
+.cfi_restore	%r15
 	movq	8(%rsp),%r14
+.cfi_restore	%r14
 	movq	16(%rsp),%r13
+.cfi_restore	%r13
 	movq	24(%rsp),%rbp
+.cfi_restore	%rbp
 	movq	32(%rsp),%rbx
+.cfi_restore	%rbx
 	leaq	40(%rsp),%rsp
+.cfi_adjust_cfa_offset	-40
 .Lenc_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	Camellia_EncryptBlock_Rounds,.-Camellia_EncryptBlock_Rounds
 
 .type	_x86_64_Camellia_encrypt,@function
 .align	16
 _x86_64_Camellia_encrypt:
+.cfi_startproc	
 	xorl	0(%r14),%r9d
 	xorl	4(%r14),%r8d
 	xorl	8(%r14),%r11d
@@ -267,6 +288,7 @@ _x86_64_Camellia_encrypt:
 	movl	%edx,%r11d
 
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_Camellia_encrypt,.-_x86_64_Camellia_encrypt
 
 
@@ -274,11 +296,13 @@ _x86_64_Camellia_encrypt:
 .type	Camellia_DecryptBlock,@function
 .align	16
 Camellia_DecryptBlock:
+.cfi_startproc	
 	movl	$128,%eax
 	subl	%edi,%eax
 	movl	$3,%edi
 	adcl	$0,%edi
 	jmp	.Ldec_rounds
+.cfi_endproc	
 .size	Camellia_DecryptBlock,.-Camellia_DecryptBlock
 
 .globl	Camellia_DecryptBlock_Rounds
@@ -286,11 +310,22 @@ Camellia_DecryptBlock:
 .align	16
 .Ldec_rounds:
 Camellia_DecryptBlock_Rounds:
+.cfi_startproc	
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-32
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-40
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-48
 .Ldec_prologue:
 
 
@@ -322,18 +357,26 @@ Camellia_DecryptBlock_Rounds:
 	movl	%r11d,12(%r13)
 
 	movq	0(%rsp),%r15
+.cfi_restore	%r15
 	movq	8(%rsp),%r14
+.cfi_restore	%r14
 	movq	16(%rsp),%r13
+.cfi_restore	%r13
 	movq	24(%rsp),%rbp
+.cfi_restore	%rbp
 	movq	32(%rsp),%rbx
+.cfi_restore	%rbx
 	leaq	40(%rsp),%rsp
+.cfi_adjust_cfa_offset	-40
 .Ldec_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	Camellia_DecryptBlock_Rounds,.-Camellia_DecryptBlock_Rounds
 
 .type	_x86_64_Camellia_decrypt,@function
 .align	16
 _x86_64_Camellia_decrypt:
+.cfi_startproc	
 	xorl	0(%r14),%r9d
 	xorl	4(%r14),%r8d
 	xorl	8(%r14),%r11d
@@ -537,16 +580,28 @@ _x86_64_Camellia_decrypt:
 	movl	%ebx,%r11d
 
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_Camellia_decrypt,.-_x86_64_Camellia_decrypt
 .globl	Camellia_Ekeygen
 .type	Camellia_Ekeygen,@function
 .align	16
 Camellia_Ekeygen:
+.cfi_startproc	
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-32
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-40
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-48
 .Lkey_prologue:
 
 	movl	%edi,%r15d
@@ -1074,14 +1129,22 @@ Camellia_Ekeygen:
 	movl	$4,%eax
 .Ldone:
 	movq	0(%rsp),%r15
+.cfi_restore	%r15
 	movq	8(%rsp),%r14
+.cfi_restore	%r14
 	movq	16(%rsp),%r13
+.cfi_restore	%r13
 	movq	24(%rsp),%rbp
+.cfi_restore	%rbp
 	movq	32(%rsp),%rbx
+.cfi_restore	%rbx
 	leaq	40(%rsp),%rsp
+.cfi_adjust_cfa_offset	-40
 .Lkey_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	Camellia_Ekeygen,.-Camellia_Ekeygen
+.section	.rodata
 .align	64
 .LCamellia_SIGMA:
 .long	0x3bcc908b, 0xa09e667f, 0x4caa73b2, 0xb67ae858
@@ -1601,21 +1664,37 @@ Camellia_Ekeygen:
 .long	0x008f8f8f,0xe300e3e3
 .long	0x00010101,0x40004040
 .long	0x003d3d3d,0x4f004f4f
+.text	
 .globl	Camellia_cbc_encrypt
 .type	Camellia_cbc_encrypt,@function
 .align	16
 Camellia_cbc_encrypt:
+.cfi_startproc	
+.byte	243,15,30,250
 	cmpq	$0,%rdx
 	je	.Lcbc_abort
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 .Lcbc_prologue:
 
 	movq	%rsp,%rbp
+.cfi_def_cfa_register	%rbp
 	subq	$64,%rsp
 	andq	$-64,%rsp
 
@@ -1636,6 +1715,7 @@ Camellia_cbc_encrypt:
 
 	movq	%r8,40(%rsp)
 	movq	%rbp,48(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x30,0x06,0x23,0x38
 
 .Lcbc_body:
 	leaq	.LCamellia_SBOX(%rip),%rbp
@@ -1824,15 +1904,45 @@ Camellia_cbc_encrypt:
 .align	16
 .Lcbc_done:
 	movq	48(%rsp),%rcx
+.cfi_def_cfa	%rcx,56
 	movq	0(%rcx),%r15
+.cfi_restore	%r15
 	movq	8(%rcx),%r14
+.cfi_restore	%r14
 	movq	16(%rcx),%r13
+.cfi_restore	%r13
 	movq	24(%rcx),%r12
+.cfi_restore	%r12
 	movq	32(%rcx),%rbp
+.cfi_restore	%rbp
 	movq	40(%rcx),%rbx
+.cfi_restore	%rbx
 	leaq	48(%rcx),%rsp
+.cfi_def_cfa	%rsp,8
 .Lcbc_abort:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	Camellia_cbc_encrypt,.-Camellia_cbc_encrypt
 
 .byte	67,97,109,101,108,108,105,97,32,102,111,114,32,120,56,54,95,54,52,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

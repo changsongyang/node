@@ -25,8 +25,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc --ignition-osr --no-always-opt
-// Flags: --opt
+// Flags: --allow-natives-syntax --expose-gc --ignition-osr
+// Flags: --turbofan
 
 // IC and Crankshaft support for smi-only elements in dynamic array literals.
 function get(foo) { return foo; }  // Used to generate dynamic values.
@@ -79,7 +79,9 @@ function array_literal_test() {
   assertEquals(2, f0[1]);
   assertEquals(1, f0[0]);
 }
+%PrepareFunctionForOptimization(array_literal_test);
 
+%PrepareFunctionForOptimization(array_literal_test);
 for (var i = 0; i < 3; i++) {
   array_literal_test();
 }
@@ -108,7 +110,9 @@ function test_large_literal() {
                [0, 1, 2, 3, 4, 5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5,
                 new Object(), new Object(), new Object(), new Object()]);
 }
+%PrepareFunctionForOptimization(test_large_literal);
 
+%PrepareFunctionForOptimization(test_large_literal);
 for (var i = 0; i < 3; i++) {
   test_large_literal();
 }
@@ -122,24 +126,31 @@ function deopt_array(use_literal) {
     return new Array();
   }
 }
+%PrepareFunctionForOptimization(deopt_array);
 
+%PrepareFunctionForOptimization(deopt_array);
 deopt_array(false);
 deopt_array(false);
 deopt_array(false);
   %OptimizeFunctionOnNextCall(deopt_array);
+var turbofan = willBeTurbofanned(deopt_array);
 var array = deopt_array(false);
 assertOptimized(deopt_array);
-deopt_array(true);
-assertOptimized(deopt_array);
-array = deopt_array(false);
-assertOptimized(deopt_array);
+if (turbofan) {
+  deopt_array(true);
+  assertOptimized(deopt_array);
+  array = deopt_array(false);
+  assertOptimized(deopt_array);
+}
 
 // Check that unexpected changes in the objects stored into the boilerplate
 // also force a deopt.
 function deopt_array_literal_all_smis(a) {
   return [0, 1, a];
 }
+%PrepareFunctionForOptimization(deopt_array_literal_all_smis);
 
+%PrepareFunctionForOptimization(deopt_array_literal_all_smis);
 deopt_array_literal_all_smis(2);
 deopt_array_literal_all_smis(3);
 deopt_array_literal_all_smis(4);
@@ -164,7 +175,9 @@ assertEquals(.5, array[2]);
 function deopt_array_literal_all_doubles(a) {
   return [0.5, 1, a];
 }
+%PrepareFunctionForOptimization(deopt_array_literal_all_doubles);
 
+%PrepareFunctionForOptimization(deopt_array_literal_all_doubles);
 deopt_array_literal_all_doubles(.5);
 deopt_array_literal_all_doubles(.5);
 deopt_array_literal_all_doubles(.5);

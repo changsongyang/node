@@ -6,9 +6,11 @@ const tick = require('../common/tick');
 const initHooks = require('./init-hooks');
 const { checkInvocations } = require('./hook-checks');
 const fs = require('fs');
+const { isMainThread } = require('worker_threads');
 
-if (!common.isMainThread)
+if (!isMainThread) {
   common.skip('Worker bootstrapping works differently -> different async IDs');
+}
 
 const hooks = initHooks();
 
@@ -32,7 +34,7 @@ function onread() {
   checkInvocations(as[2], { init: 1, before: 1, after: 1, destroy: 1 },
                    'reqwrap[2]: while in onread callback');
 
-  // this callback is called from within the last fs req callback therefore
+  // This callback is called from within the last fs req callback therefore
   // the last req is still going and after/destroy haven't been called yet
   checkInvocations(as[3], { init: 1, before: 1 },
                    'reqwrap[3]: while in onread callback');

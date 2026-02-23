@@ -3,16 +3,12 @@
 // found in the LICENSE file.
 
 #include "src/compiler/typed-optimization.h"
-#include "src/code-factory.h"
-#include "src/compiler/access-builder.h"
+
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-operator.h"
 #include "src/compiler/machine-operator.h"
-#include "src/compiler/node-properties.h"
-#include "src/compiler/operator-properties.h"
-#include "src/isolate-inl.h"
-#include "test/unittests/compiler/compiler-test-utils.h"
+#include "src/execution/isolate-inl.h"
 #include "test/unittests/compiler/graph-unittest.h"
 #include "test/unittests/compiler/node-test-utils.h"
 #include "testing/gmock-support.h"
@@ -27,8 +23,8 @@ namespace typed_optimization_unittest {
 class TypedOptimizationTest : public TypedGraphTest {
  public:
   TypedOptimizationTest()
-      : TypedGraphTest(3), simplified_(zone()), deps_(isolate(), zone()) {}
-  ~TypedOptimizationTest() override {}
+      : TypedGraphTest(3), simplified_(zone()), deps_(broker(), zone()) {}
+  ~TypedOptimizationTest() override = default;
 
  protected:
   Reduction Reduce(Node* node) {
@@ -36,10 +32,8 @@ class TypedOptimizationTest : public TypedGraphTest {
     JSOperatorBuilder javascript(zone());
     JSGraph jsgraph(isolate(), graph(), common(), &javascript, simplified(),
                     &machine);
-    // TODO(titzer): mock the GraphReducer here for better unit testing.
-    GraphReducer graph_reducer(zone(), graph());
-    TypedOptimization reducer(&graph_reducer, &deps_, &jsgraph,
-                              js_heap_broker());
+    GraphReducer graph_reducer(zone(), graph(), tick_counter(), broker());
+    TypedOptimization reducer(&graph_reducer, &deps_, &jsgraph, broker());
     return reducer.Reduce(node);
   }
 
@@ -103,6 +97,26 @@ TEST_F(TypedOptimizationTest, ToBooleanWithAny) {
   Node* input = Parameter(Type::Any(), 0);
   Reduction r = Reduce(graph()->NewNode(simplified()->ToBoolean(), input));
   ASSERT_FALSE(r.Changed());
+}
+
+// -----------------------------------------------------------------------------
+// ReferenceEqual
+TEST_F(TypedOptimizationTest, ReferenceEqualWithBooleanTrueConstant) {
+  Node* left = Parameter(Type::Boolean(), 0);
+  Node* right = TrueConstant();
+  Reduction r =
+      Reduce(graph()->NewNode(simplified()->ReferenceEqual(), left, right));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(), left);
+}
+
+TEST_F(TypedOptimizationTest, ReferenceEqualWithBooleanFalseConstant) {
+  Node* left = Parameter(Type::Boolean(), 0);
+  Node* right = FalseConstant();
+  Reduction r =
+      Reduce(graph()->NewNode(simplified()->ReferenceEqual(), left, right));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(), IsBooleanNot(left));
 }
 
 }  // namespace typed_optimization_unittest

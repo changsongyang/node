@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "src/compiler/scheduler.h"
+
+#include "src/codegen/tick-counter.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/compiler-source-position-table.h"
-#include "src/compiler/graph-visualizer.h"
-#include "src/compiler/graph.h"
 #include "src/compiler/js-operator.h"
 #include "src/compiler/node-origin-table.h"
 #include "src/compiler/node.h"
@@ -15,6 +15,8 @@
 #include "src/compiler/operator.h"
 #include "src/compiler/schedule.h"
 #include "src/compiler/simplified-operator.h"
+#include "src/compiler/turbofan-graph-visualizer.h"
+#include "src/compiler/turbofan-graph.h"
 #include "src/compiler/verifier.h"
 #include "test/unittests/compiler/compiler-test-utils.h"
 #include "test/unittests/test-utils.h"
@@ -32,16 +34,16 @@ class SchedulerTest : public TestWithIsolateAndZone {
       : graph_(zone()), common_(zone()), simplified_(zone()), js_(zone()) {}
 
   Schedule* ComputeAndVerifySchedule(size_t expected) {
-    if (FLAG_trace_turbo) {
+    if (v8_flags.trace_turbo) {
       SourcePositionTable table(graph());
       NodeOriginTable table2(graph());
       StdoutStream{} << AsJSON(*graph(), &table, &table2);
     }
 
-    Schedule* schedule =
-        Scheduler::ComputeSchedule(zone(), graph(), Scheduler::kSplitNodes);
+    Schedule* schedule = Scheduler::ComputeSchedule(
+        zone(), graph(), Scheduler::kSplitNodes, tick_counter(), nullptr);
 
-    if (FLAG_trace_turbo_scheduler) {
+    if (v8_flags.trace_turbo_scheduler) {
       StdoutStream{} << *schedule << std::endl;
     }
     ScheduleVerifier::Run(schedule);
@@ -58,13 +60,15 @@ class SchedulerTest : public TestWithIsolateAndZone {
     return node_count;
   }
 
-  Graph* graph() { return &graph_; }
+  TFGraph* graph() { return &graph_; }
   CommonOperatorBuilder* common() { return &common_; }
   SimplifiedOperatorBuilder* simplified() { return &simplified_; }
   JSOperatorBuilder* js() { return &js_; }
+  TickCounter* tick_counter() { return &tick_counter_; }
 
  private:
-  Graph graph_;
+  TickCounter tick_counter_;
+  TFGraph graph_;
   CommonOperatorBuilder common_;
   SimplifiedOperatorBuilder simplified_;
   JSOperatorBuilder js_;
@@ -88,7 +92,8 @@ const Operator kMockTailCall(IrOpcode::kTailCall, Operator::kNoProperties,
 TEST_F(SchedulerTest, BuildScheduleEmpty) {
   graph()->SetStart(graph()->NewNode(common()->Start(0)));
   graph()->SetEnd(graph()->NewNode(common()->End(1), graph()->start()));
-  USE(Scheduler::ComputeSchedule(zone(), graph(), Scheduler::kNoFlags));
+  USE(Scheduler::ComputeSchedule(zone(), graph(), Scheduler::kNoFlags,
+                                 tick_counter(), nullptr));
 }
 
 
@@ -102,13 +107,14 @@ TEST_F(SchedulerTest, BuildScheduleOneParameter) {
 
   graph()->SetEnd(graph()->NewNode(common()->End(1), ret));
 
-  USE(Scheduler::ComputeSchedule(zone(), graph(), Scheduler::kNoFlags));
+  USE(Scheduler::ComputeSchedule(zone(), graph(), Scheduler::kNoFlags,
+                                 tick_counter(), nullptr));
 }
 
 
 namespace {
 
-Node* CreateDiamond(Graph* graph, CommonOperatorBuilder* common, Node* cond) {
+Node* CreateDiamond(TFGraph* graph, CommonOperatorBuilder* common, Node* cond) {
   Node* tv = graph->NewNode(common->Int32Constant(6));
   Node* fv = graph->NewNode(common->Int32Constant(7));
   Node* br = graph->NewNode(common->Branch(), cond, graph->start());
@@ -155,7 +161,7 @@ TARGET_TEST_F(SchedulerTest, FloatingDeadDiamond1) {
 }
 
 TARGET_TEST_F(SchedulerTest, FloatingDeadDiamond2) {
-  Graph* g = graph();
+  TFGraph* g = graph();
   Node* start = g->NewNode(common()->Start(1));
   g->SetStart(start);
 

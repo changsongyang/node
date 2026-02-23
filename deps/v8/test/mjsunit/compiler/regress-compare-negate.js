@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 function CompareNegate(a,b) {
  a = a|0;
@@ -11,6 +11,7 @@ function CompareNegate(a,b) {
  return a < (sub|0);
 }
 
+%PrepareFunctionForOptimization(CompareNegate);
 var x = CompareNegate(1,0x80000000);
 %OptimizeFunctionOnNextCall(CompareNegate);
 CompareNegate(1,0x80000000);

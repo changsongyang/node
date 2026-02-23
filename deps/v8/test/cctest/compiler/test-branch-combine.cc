@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/objects-inl.h"
+#include "src/base/overflowing-math.h"
+#include "src/objects/objects-inl.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/codegen-tester.h"
-#include "test/cctest/compiler/value-helper.h"
+#include "test/common/value-helper.h"
 
 namespace v8 {
 namespace internal {
@@ -31,8 +32,7 @@ TEST(BranchCombineWord32EqualZero_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_INT32_INPUTS(i) {
-    int32_t a = *i;
+  FOR_INT32_INPUTS(a) {
     int32_t expect = a == 0 ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -58,8 +58,7 @@ TEST(BranchCombineWord32EqualZero_chain) {
     m.Bind(&blockb);
     m.Return(m.Int32Constant(ne_constant));
 
-    FOR_INT32_INPUTS(i) {
-      int32_t a = *i;
+    FOR_INT32_INPUTS(a) {
       int32_t expect = (k & 1) == 1 ? (a == 0 ? eq_constant : ne_constant)
                                     : (a == 0 ? ne_constant : eq_constant);
       CHECK_EQ(expect, m.Call(a));
@@ -82,8 +81,7 @@ TEST(BranchCombineInt32LessThanZero_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_INT32_INPUTS(i) {
-    int32_t a = *i;
+  FOR_INT32_INPUTS(a) {
     int32_t expect = a < 0 ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -104,8 +102,7 @@ TEST(BranchCombineUint32LessThan100_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_UINT32_INPUTS(i) {
-    uint32_t a = *i;
+  FOR_UINT32_INPUTS(a) {
     int32_t expect = a < 100 ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -126,8 +123,7 @@ TEST(BranchCombineUint32LessThanOrEqual100_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_UINT32_INPUTS(i) {
-    uint32_t a = *i;
+  FOR_UINT32_INPUTS(a) {
     int32_t expect = a <= 100 ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -148,8 +144,7 @@ TEST(BranchCombineZeroLessThanInt32_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_INT32_INPUTS(i) {
-    int32_t a = *i;
+  FOR_INT32_INPUTS(a) {
     int32_t expect = 0 < a ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -170,8 +165,7 @@ TEST(BranchCombineInt32GreaterThanZero_1) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_INT32_INPUTS(i) {
-    int32_t a = *i;
+  FOR_INT32_INPUTS(a) {
     int32_t expect = a > 0 ? eq_constant : ne_constant;
     CHECK_EQ(expect, m.Call(a));
   }
@@ -194,10 +188,8 @@ TEST(BranchCombineWord32EqualP) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(ne_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
       int32_t expect = a == b ? eq_constant : ne_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -210,9 +202,8 @@ TEST(BranchCombineWord32EqualI) {
   int32_t ne_constant = 925718;
 
   for (int left = 0; left < 2; left++) {
-    FOR_INT32_INPUTS(i) {
+    FOR_INT32_INPUTS(a) {
       RawMachineAssemblerTester<int32_t> m(MachineType::Int32());
-      int32_t a = *i;
 
       Node* p0 = m.Int32Constant(a);
       Node* p1 = m.Parameter(0);
@@ -225,8 +216,7 @@ TEST(BranchCombineWord32EqualI) {
       m.Bind(&blockb);
       m.Return(m.Int32Constant(ne_constant));
 
-      FOR_INT32_INPUTS(j) {
-        int32_t b = *j;
+      FOR_INT32_INPUTS(b) {
         int32_t expect = a == b ? eq_constant : ne_constant;
         CHECK_EQ(expect, m.Call(b));
       }
@@ -253,10 +243,8 @@ TEST(BranchCombineInt32CmpP) {
     m.Bind(&blockb);
     m.Return(m.Int32Constant(ne_constant));
 
-    FOR_INT32_INPUTS(i) {
-      FOR_INT32_INPUTS(j) {
-        int32_t a = *i;
-        int32_t b = *j;
+    FOR_INT32_INPUTS(a) {
+      FOR_INT32_INPUTS(b) {
         int32_t expect = 0;
         if (op == 0) expect = a < b ? eq_constant : ne_constant;
         if (op == 1) expect = a <= b ? eq_constant : ne_constant;
@@ -272,9 +260,8 @@ TEST(BranchCombineInt32CmpI) {
   int32_t ne_constant = 927711;
 
   for (int op = 0; op < 2; op++) {
-    FOR_INT32_INPUTS(i) {
+    FOR_INT32_INPUTS(a) {
       RawMachineAssemblerTester<int32_t> m(MachineType::Int32());
-      int32_t a = *i;
       Node* p0 = m.Int32Constant(a);
       Node* p1 = m.Parameter(0);
 
@@ -286,8 +273,7 @@ TEST(BranchCombineInt32CmpI) {
       m.Bind(&blockb);
       m.Return(m.Int32Constant(ne_constant));
 
-      FOR_INT32_INPUTS(j) {
-        int32_t b = *j;
+      FOR_INT32_INPUTS(b) {
         int32_t expect = 0;
         if (op == 0) expect = a < b ? eq_constant : ne_constant;
         if (op == 1) expect = a <= b ? eq_constant : ne_constant;
@@ -309,12 +295,12 @@ class CmpMaterializeBoolGen : public BinopGen<int32_t> {
   CmpMaterializeBoolGen(IrOpcode::Value opcode, bool i)
       : w(opcode), invert(i) {}
 
-  virtual void gen(RawMachineAssemblerTester<int32_t>* m, Node* a, Node* b) {
+  void gen(RawMachineAssemblerTester<int32_t>* m, Node* a, Node* b) override {
     Node* cond = w.MakeNode(m, a, b);
     if (invert) cond = m->Word32Equal(cond, m->Int32Constant(0));
     m->Return(cond);
   }
-  virtual int32_t expected(int32_t a, int32_t b) {
+  int32_t expected(int32_t a, int32_t b) override {
     if (invert) return !w.Int32Compare(a, b) ? 1 : 0;
     return w.Int32Compare(a, b) ? 1 : 0;
   }
@@ -333,7 +319,7 @@ class CmpBranchGen : public BinopGen<int32_t> {
   CmpBranchGen(IrOpcode::Value opcode, bool i, bool t, int32_t eq, int32_t ne)
       : w(opcode), invert(i), true_first(t), eq_constant(eq), ne_constant(ne) {}
 
-  virtual void gen(RawMachineAssemblerTester<int32_t>* m, Node* a, Node* b) {
+  void gen(RawMachineAssemblerTester<int32_t>* m, Node* a, Node* b) override {
     RawMachineLabel blocka, blockb;
     Node* cond = w.MakeNode(m, a, b);
     if (invert) cond = m->Word32Equal(cond, m->Int32Constant(0));
@@ -350,7 +336,7 @@ class CmpBranchGen : public BinopGen<int32_t> {
       m->Return(m->Int32Constant(eq_constant));
     }
   }
-  virtual int32_t expected(int32_t a, int32_t b) {
+  int32_t expected(int32_t a, int32_t b) override {
     if (invert) return !w.Int32Compare(a, b) ? eq_constant : ne_constant;
     return w.Int32Compare(a, b) ? eq_constant : ne_constant;
   }
@@ -485,9 +471,9 @@ TEST(BranchCombineInt32AddLessThanZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Int32LessThan(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -497,11 +483,10 @@ TEST(BranchCombineInt32AddLessThanZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
-      int32_t expect = (a + b < 0) ? t_constant : f_constant;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
+      int32_t expect =
+          (base::AddWithWraparound(a, b) < 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
   }
@@ -513,9 +498,9 @@ TEST(BranchCombineInt32AddGreaterThanOrEqualZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Int32GreaterThanOrEqual(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -525,11 +510,10 @@ TEST(BranchCombineInt32AddGreaterThanOrEqualZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
-      int32_t expect = (a + b >= 0) ? t_constant : f_constant;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
+      int32_t expect =
+          (base::AddWithWraparound(a, b) >= 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
   }
@@ -541,9 +525,9 @@ TEST(BranchCombineInt32ZeroGreaterThanAdd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Int32GreaterThan(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -553,11 +537,10 @@ TEST(BranchCombineInt32ZeroGreaterThanAdd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
-      int32_t expect = (0 > a + b) ? t_constant : f_constant;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
+      int32_t expect =
+          (0 > base::AddWithWraparound(a, b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
   }
@@ -569,9 +552,9 @@ TEST(BranchCombineInt32ZeroLessThanOrEqualAdd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Int32LessThanOrEqual(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -581,11 +564,10 @@ TEST(BranchCombineInt32ZeroLessThanOrEqualAdd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
-      int32_t expect = (0 <= a + b) ? t_constant : f_constant;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
+      int32_t expect =
+          (0 <= base::AddWithWraparound(a, b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
   }
@@ -597,9 +579,9 @@ TEST(BranchCombineUint32AddLessThanOrEqualZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Uint32LessThanOrEqual(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -609,10 +591,8 @@ TEST(BranchCombineUint32AddLessThanOrEqualZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (a + b <= 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -625,9 +605,9 @@ TEST(BranchCombineUint32AddGreaterThanZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Uint32GreaterThan(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -637,10 +617,8 @@ TEST(BranchCombineUint32AddGreaterThanZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (a + b > 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -653,9 +631,9 @@ TEST(BranchCombineUint32ZeroGreaterThanOrEqualAdd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Uint32GreaterThanOrEqual(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -665,10 +643,8 @@ TEST(BranchCombineUint32ZeroGreaterThanOrEqualAdd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (0 >= a + b) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -681,9 +657,9 @@ TEST(BranchCombineUint32ZeroLessThanAdd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Int32Add(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Int32Add(p0, p1);
   Node* compare = m.Uint32LessThan(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -693,10 +669,8 @@ TEST(BranchCombineUint32ZeroLessThanAdd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (0 < a + b) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -709,9 +683,9 @@ TEST(BranchCombineWord32AndLessThanZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Int32LessThan(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -721,10 +695,8 @@ TEST(BranchCombineWord32AndLessThanZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
       int32_t expect = ((a & b) < 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -737,9 +709,9 @@ TEST(BranchCombineWord32AndGreaterThanOrEqualZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Int32GreaterThanOrEqual(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -749,10 +721,8 @@ TEST(BranchCombineWord32AndGreaterThanOrEqualZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
       int32_t expect = ((a & b) >= 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -765,9 +735,9 @@ TEST(BranchCombineInt32ZeroGreaterThanAnd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Int32GreaterThan(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -777,10 +747,8 @@ TEST(BranchCombineInt32ZeroGreaterThanAnd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
       int32_t expect = (0 > (a & b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -793,9 +761,9 @@ TEST(BranchCombineInt32ZeroLessThanOrEqualAnd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Int32(),
                                        MachineType::Int32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Int32LessThanOrEqual(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -805,10 +773,8 @@ TEST(BranchCombineInt32ZeroLessThanOrEqualAnd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      int32_t a = *i;
-      int32_t b = *j;
+  FOR_INT32_INPUTS(a) {
+    FOR_INT32_INPUTS(b) {
       int32_t expect = (0 <= (a & b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -821,9 +787,9 @@ TEST(BranchCombineUint32AndLessThanOrEqualZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Uint32LessThanOrEqual(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -833,10 +799,8 @@ TEST(BranchCombineUint32AndLessThanOrEqualZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = ((a & b) <= 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -849,9 +813,9 @@ TEST(BranchCombineUint32AndGreaterThanZero) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Uint32GreaterThan(add, m.Int32Constant(0));
 
   RawMachineLabel blocka, blockb;
@@ -861,10 +825,8 @@ TEST(BranchCombineUint32AndGreaterThanZero) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = ((a & b) > 0) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -877,9 +839,9 @@ TEST(BranchCombineUint32ZeroGreaterThanOrEqualAnd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Uint32GreaterThanOrEqual(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -889,10 +851,8 @@ TEST(BranchCombineUint32ZeroGreaterThanOrEqualAnd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (0 >= (a & b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }
@@ -905,9 +865,9 @@ TEST(BranchCombineUint32ZeroLessThanAnd) {
 
   RawMachineAssemblerTester<int32_t> m(MachineType::Uint32(),
                                        MachineType::Uint32());
-  Node* a = m.Parameter(0);
-  Node* b = m.Parameter(1);
-  Node* add = m.Word32And(a, b);
+  Node* p0 = m.Parameter(0);
+  Node* p1 = m.Parameter(1);
+  Node* add = m.Word32And(p0, p1);
   Node* compare = m.Uint32LessThan(m.Int32Constant(0), add);
 
   RawMachineLabel blocka, blockb;
@@ -917,10 +877,8 @@ TEST(BranchCombineUint32ZeroLessThanAnd) {
   m.Bind(&blockb);
   m.Return(m.Int32Constant(f_constant));
 
-  FOR_INT32_INPUTS(i) {
-    FOR_INT32_INPUTS(j) {
-      uint32_t a = *i;
-      uint32_t b = *j;
+  FOR_UINT32_INPUTS(a) {
+    FOR_UINT32_INPUTS(b) {
       int32_t expect = (0 < (a & b)) ? t_constant : f_constant;
       CHECK_EQ(expect, m.Call(a, b));
     }

@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function instantiate(sig, body) {
   var builder = new WasmModuleBuilder();
@@ -30,9 +27,9 @@ function assertVerifies(sig, body) {
 assertVerifies(kSig_v_v, [kExprNop]);
 
 // Arguments aren't allowed to start functions.
-assertThrows(() => {instantiate(kSig_i_i, [kExprGetLocal, 0]);});
-assertThrows(() => {instantiate(kSig_i_ii, [kExprGetLocal, 0]);});
-assertThrows(() => {instantiate(kSig_i_dd, [kExprGetLocal, 0]);});
+assertThrows(() => {instantiate(kSig_i_i, [kExprLocalGet, 0]);});
+assertThrows(() => {instantiate(kSig_i_ii, [kExprLocalGet, 0]);});
+assertThrows(() => {instantiate(kSig_i_dd, [kExprLocalGet, 0]);});
 assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
 
 (function testInvalidIndex() {
@@ -46,7 +43,7 @@ assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
 
   assertThrows(
       () => builder.instantiate(), WebAssembly.CompileError,
-      'WebAssembly.Module(): Wasm decoding failed: ' +
+      'WebAssembly.Module(): ' +
           'function index 1 out of bounds (1 entry) @+20');
 })();
 
@@ -63,8 +60,7 @@ assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
 
   assertThrows(
       () => builder.instantiate(), WebAssembly.CompileError,
-      'WebAssembly.Module(): Wasm decoding failed: ' +
-          'unexpected section: Start @+27');
+      'WebAssembly.Module(): unexpected section <Start> @+27');
 })();
 
 
@@ -72,7 +68,8 @@ assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
   print("testRun1");
   var builder = new WasmModuleBuilder();
 
-  builder.addMemory(12, 12, true);
+  builder.addMemory(12, 12);
+  builder.exportMemoryAs("memory");
 
   var func = builder.addFunction("", kSig_v_v)
     .addBody([kExprI32Const, 0, kExprI32Const, 55, kExprI32StoreMem, 0, 0]);
@@ -89,7 +86,8 @@ assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
   print("testRun2");
   var builder = new WasmModuleBuilder();
 
-  builder.addMemory(12, 12, true);
+  builder.addMemory(12, 12);
+  builder.exportMemoryAs("memory");
 
   var func = builder.addFunction("", kSig_v_v)
     .addBody([kExprI32Const, 0, kExprI32Const, 22, kExprI32Const, 55, kExprI32Add, kExprI32StoreMem, 0, 0]);
@@ -153,9 +151,7 @@ assertThrows(() => {instantiate(kSig_i_v, [kExprI32Const, 0]);});
 
   assertThrows(
       () => builder.instantiate(), WebAssembly.RuntimeError, /unreachable/);
-  assertPromiseResult(builder.asyncInstantiate(), assertUnreachable,
-    e => assertInstanceof(e, WebAssembly.RuntimeError));
-  assertPromiseResult(WebAssembly.instantiate(builder.toModule()),
-    assertUnreachable,
-    e => assertInstanceof(e, WebAssembly.RuntimeError));
+  assertThrowsAsync(builder.asyncInstantiate(), WebAssembly.RuntimeError);
+  assertThrowsAsync(
+      WebAssembly.instantiate(builder.toModule()), WebAssembly.RuntimeError);
 })();

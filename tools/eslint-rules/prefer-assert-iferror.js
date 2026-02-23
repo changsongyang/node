@@ -1,5 +1,5 @@
 /**
- * @fileoverview Prohibit the `if (err) throw err;` pattern
+ * @file Prohibit the `if (err) throw err;` pattern
  * @author Teddy Katz
  */
 
@@ -8,9 +8,12 @@
 const utils = require('./rules-utils.js');
 
 module.exports = {
+  meta: {
+    fixable: 'code',
+  },
   create(context) {
-    const sourceCode = context.getSourceCode();
-    var assertImported = false;
+    const sourceCode = context.sourceCode;
+    let assertImported = false;
 
     function hasSameTokens(nodeA, nodeB) {
       const aTokens = sourceCode.getTokens(nodeA);
@@ -49,13 +52,13 @@ module.exports = {
               if (assertImported) {
                 return fixer.replaceText(
                   node,
-                  `assert.ifError(${argument});`
+                  `assert.ifError(${argument});`,
                 );
               }
-            }
+            },
           });
         }
-      }
+      },
     };
-  }
+  },
 };

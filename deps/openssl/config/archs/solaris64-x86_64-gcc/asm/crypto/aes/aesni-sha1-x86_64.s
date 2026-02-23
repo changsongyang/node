@@ -5,6 +5,7 @@
 .type	aesni_cbc_sha1_enc,@function
 .align	32
 aesni_cbc_sha1_enc:
+.cfi_startproc	
 
 	movl	OPENSSL_ia32cap_P+0(%rip),%r10d
 	movq	OPENSSL_ia32cap_P+4(%rip),%r11
@@ -17,20 +18,35 @@ aesni_cbc_sha1_enc:
 	je	aesni_cbc_sha1_enc_avx
 	jmp	aesni_cbc_sha1_enc_ssse3
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_cbc_sha1_enc,.-aesni_cbc_sha1_enc
 .type	aesni_cbc_sha1_enc_ssse3,@function
 .align	32
 aesni_cbc_sha1_enc_ssse3:
+.cfi_startproc	
 	movq	8(%rsp),%r10
 
 
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 	leaq	-104(%rsp),%rsp
+.cfi_adjust_cfa_offset	104
 
 
 	movq	%rdi,%r12
@@ -1362,29 +1378,52 @@ aesni_cbc_sha1_enc_ssse3:
 	movl	%ebp,16(%r9)
 	movups	%xmm2,(%r8)
 	leaq	104(%rsp),%rsi
+.cfi_def_cfa	%rsi,56
 	movq	0(%rsi),%r15
+.cfi_restore	%r15
 	movq	8(%rsi),%r14
+.cfi_restore	%r14
 	movq	16(%rsi),%r13
+.cfi_restore	%r13
 	movq	24(%rsi),%r12
+.cfi_restore	%r12
 	movq	32(%rsi),%rbp
+.cfi_restore	%rbp
 	movq	40(%rsi),%rbx
+.cfi_restore	%rbx
 	leaq	48(%rsi),%rsp
+.cfi_def_cfa	%rsp,8
 .Lepilogue_ssse3:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_cbc_sha1_enc_ssse3,.-aesni_cbc_sha1_enc_ssse3
 .type	aesni_cbc_sha1_enc_avx,@function
 .align	32
 aesni_cbc_sha1_enc_avx:
+.cfi_startproc	
 	movq	8(%rsp),%r10
 
 
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 	leaq	-104(%rsp),%rsp
+.cfi_adjust_cfa_offset	104
 
 
 	vzeroall
@@ -2660,16 +2699,26 @@ aesni_cbc_sha1_enc_avx:
 	vmovups	%xmm12,(%r8)
 	vzeroall
 	leaq	104(%rsp),%rsi
+.cfi_def_cfa	%rsi,56
 	movq	0(%rsi),%r15
+.cfi_restore	%r15
 	movq	8(%rsi),%r14
+.cfi_restore	%r14
 	movq	16(%rsi),%r13
+.cfi_restore	%r13
 	movq	24(%rsi),%r12
+.cfi_restore	%r12
 	movq	32(%rsi),%rbp
+.cfi_restore	%rbp
 	movq	40(%rsi),%rbx
+.cfi_restore	%rbx
 	leaq	48(%rsi),%rsp
+.cfi_def_cfa	%rsp,8
 .Lepilogue_avx:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_cbc_sha1_enc_avx,.-aesni_cbc_sha1_enc_avx
+.section	.rodata
 .align	64
 K_XX_XX:
 .long	0x5a827999,0x5a827999,0x5a827999,0x5a827999
@@ -2681,9 +2730,11 @@ K_XX_XX:
 
 .byte	65,69,83,78,73,45,67,66,67,43,83,72,65,49,32,115,116,105,116,99,104,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	64
+.previous	
 .type	aesni_cbc_sha1_enc_shaext,@function
 .align	32
 aesni_cbc_sha1_enc_shaext:
+.cfi_startproc	
 	movq	8(%rsp),%r10
 	movdqu	(%r9),%xmm8
 	movd	16(%r9),%xmm9
@@ -2982,4 +3033,26 @@ aesni_cbc_sha1_enc_shaext:
 	movdqu	%xmm8,(%r9)
 	movd	%xmm9,16(%r9)
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_cbc_sha1_enc_shaext,.-aesni_cbc_sha1_enc_shaext
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

@@ -29,46 +29,46 @@ let starttime = null;
 let timeouttime = null;
 const timeout = 1000;
 
-const echo_server = net.createServer(function(socket) {
+const echo_server = net.createServer((socket) => {
   socket.setTimeout(timeout);
 
-  socket.on('timeout', function() {
+  socket.on('timeout', () => {
     console.log('server timeout');
     timeouttime = new Date();
     console.dir(timeouttime);
     socket.destroy();
   });
 
-  socket.on('error', function(e) {
+  socket.on('error', (e) => {
     throw new Error(
       'Server side socket should not get error. We disconnect willingly.');
   });
 
-  socket.on('data', function(d) {
-    console.log(d);
+  socket.on('data', (d) => {
     socket.write(d);
   });
 
-  socket.on('end', function() {
+  socket.on('end', () => {
     socket.end();
   });
 });
 
-echo_server.listen(common.PORT, function() {
-  console.log(`server listening at ${common.PORT}`);
+echo_server.listen(0, common.mustCall(() => {
+  const port = echo_server.address().port;
+  console.log(`server listening at ${port}`);
 
-  const client = net.createConnection(common.PORT);
+  const client = net.createConnection(port);
   client.setEncoding('UTF8');
-  client.setTimeout(0); // disable the timeout for client
-  client.on('connect', function() {
+  client.setTimeout(0); // Disable the timeout for client
+  client.on('connect', () => {
     console.log('client connected.');
     client.write('hello\r\n');
   });
 
-  client.on('data', function(chunk) {
+  client.on('data', common.mustCallAtLeast((chunk) => {
     assert.strictEqual(chunk, 'hello\r\n');
     if (exchanges++ < 5) {
-      setTimeout(function() {
+      setTimeout(() => {
         console.log('client write "hello"');
         client.write('hello\r\n');
       }, 500);
@@ -79,24 +79,24 @@ echo_server.listen(common.PORT, function() {
         console.dir(starttime);
       }
     }
-  });
+  }));
 
-  client.on('timeout', function() {
+  client.on('timeout', () => {
     throw new Error("client timeout - this shouldn't happen");
   });
 
-  client.on('end', function() {
+  client.on('end', () => {
     console.log('client end');
     client.end();
   });
 
-  client.on('close', function() {
+  client.on('close', () => {
     console.log('client disconnect');
     echo_server.close();
   });
-});
+}));
 
-process.on('exit', function() {
+process.on('exit', () => {
   assert.ok(starttime != null);
   assert.ok(timeouttime != null);
 
@@ -104,7 +104,4 @@ process.on('exit', function() {
   console.log(`diff = ${diff}`);
 
   assert.ok(timeout < diff);
-
-  // Allow for 800 milliseconds more
-  assert.ok(diff < timeout + 800);
 });

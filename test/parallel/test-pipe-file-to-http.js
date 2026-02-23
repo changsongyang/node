@@ -24,39 +24,42 @@ const common = require('../common');
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
-const path = require('path');
 
 const tmpdir = require('../common/tmpdir');
 tmpdir.refresh();
 
-const filename = path.join(tmpdir.path || '/tmp', 'big');
+const filename = tmpdir.resolve('big');
 let count = 0;
 
-const server = http.createServer(function(req, res) {
-  let timeoutId;
+const server = http.createServer(common.mustCall((req, res) => {
   assert.strictEqual(req.method, 'POST');
   req.pause();
 
-  setTimeout(function() {
+  const timeoutId = setTimeout(() => {
     req.resume();
   }, 1000);
 
-  req.on('data', function(chunk) {
+  req.on('data', (chunk) => {
     count += chunk.length;
   });
 
-  req.on('end', function() {
+  req.on('end', () => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end();
   });
-});
+}));
 server.listen(0);
 
-server.on('listening', function() {
-  common.createZeroFilledFile(filename);
+server.on('listening', () => {
+
+  // Create a zero-filled file
+  const fd = fs.openSync(filename, 'w');
+  fs.ftruncateSync(fd, 10 * 1024 * 1024);
+  fs.closeSync(fd);
+
   makeRequest();
 });
 
@@ -69,18 +72,16 @@ function makeRequest() {
 
   const s = fs.ReadStream(filename);
   s.pipe(req);
-  s.on('close', common.mustCall((err) => {
-    assert.ifError(err);
-  }));
+  s.on('close', common.mustSucceed());
 
-  req.on('response', function(res) {
+  req.on('response', (res) => {
     res.resume();
-    res.on('end', function() {
+    res.on('end', () => {
       server.close();
     });
   });
 }
 
-process.on('exit', function() {
+process.on('exit', () => {
   assert.strictEqual(count, 1024 * 10240);
 });

@@ -4,8 +4,10 @@
 Design overview
 ===============
 
-libuv is cross-platform support library which was originally written for NodeJS. It's designed
+libuv is cross-platform support library which was originally written for `Node.js`_. It's designed
 around the event-driven asynchronous I/O model.
+
+.. _Node.js: https://nodejs.org
 
 The library provides much more than a simple abstraction over different I/O polling mechanisms:
 'handles' and 'streams' provide a high level abstraction for sockets and other entities;
@@ -58,15 +60,14 @@ stages of a loop iteration:
     :align: center
 
 
-#. The loop concept of 'now' is updated. The event loop caches the current time at the start of
-   the event loop tick in order to reduce the number of time-related system calls.
+#. The loop concept of 'now' is initially set.
+
+#. Due timers are run if the loop was run with ``UV_RUN_DEFAULT``. All active timers scheduled
+   for a time before the loop's concept of *now* get their callbacks called.
 
 #. If the loop is *alive*  an iteration is started, otherwise the loop will exit immediately. So,
    when is a loop considered to be *alive*? If a loop has active and ref'd handles, active
    requests or closing handles it's considered to be *alive*.
-
-#. Due timers are run. All active timers scheduled for a time before the loop's concept of *now*
-   get their callbacks called.
 
 #. Pending callbacks are called. All I/O callbacks are called right after polling for I/O, for the
    most part. There are cases, however, in which calling such a callback is deferred for the next
@@ -99,9 +100,11 @@ stages of a loop iteration:
 #. Close callbacks are called. If a handle was closed by calling :c:func:`uv_close` it will
    get the close callback called.
 
-#. Special case in case the loop was run with ``UV_RUN_ONCE``, as it implies forward progress.
-   It's possible that no I/O callbacks were fired after blocking for I/O, but some time has passed
-   so there might be timers which are due, those timers get their callbacks called.
+#. The loop concept of 'now' is updated.
+
+#. Due timers are run. Note that 'now' is not updated again until the next loop iteration.
+   So if a timer became due while other timers were being processed, it won't be run until
+   the following event loop iteration.
 
 #. Iteration ends. If the loop was run with ``UV_RUN_NOWAIT`` or ``UV_RUN_ONCE`` modes the
    iteration ends and :c:func:`uv_run` will return. If the loop was run with ``UV_RUN_DEFAULT``
@@ -123,8 +126,8 @@ File I/O
 Unlike network I/O, there are no platform-specific file I/O primitives libuv could rely on,
 so the current approach is to run blocking file I/O operations in a thread pool.
 
-For a thorough explanation of the cross-platform file I/O landscape, checkout
-`this post <http://blog.libtorrent.org/2012/10/asynchronous-disk-io/>`_.
+For a thorough explanation of the cross-platform file I/O landscape, check out
+`this post <https://blog.libtorrent.org/2012/10/asynchronous-disk-io/>`_.
 
 libuv currently uses a global thread pool on which all loops can queue work. 3 types of
 operations are currently run on this pool:

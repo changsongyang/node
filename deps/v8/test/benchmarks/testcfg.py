@@ -34,13 +34,9 @@ from testrunner.local import testsuite
 from testrunner.objects import testcase
 
 
-class TestSuite(testsuite.TestSuite):
-  def __init__(self, *args, **kwargs):
-    super(TestSuite, self).__init__(*args, **kwargs)
-    self.testroot = os.path.join(self.root, "data")
-
-  def ListTests(self):
-    tests = map(self._create_test, [
+class TestLoader(testsuite.TestLoader):
+  def _list_test_filenames(self):
+    return [
         "kraken/ai-astar",
         "kraken/audio-beat-detection",
         "kraken/audio-dft",
@@ -98,40 +94,44 @@ class TestSuite(testsuite.TestSuite):
         "sunspider/string-tagcloud",
         "sunspider/string-unpack-code",
         "sunspider/string-validate-input",
-    ])
-    return tests
+    ]
+
+
+class TestSuite(testsuite.TestSuite):
+
+  def __init__(self, ctx, *args, **kwargs):
+    super(TestSuite, self).__init__(ctx, *args, **kwargs)
+    self.testroot = self.root / "data"
+
+  def _test_loader_class(self):
+    return TestLoader
 
   def _test_class(self):
     return TestCase
 
 
-class TestCase(testcase.TestCase):
+class TestCase(testcase.D8TestCase):
   def _get_files_params(self):
     path = self.path
     testroot = self.suite.testroot
     files = []
-    if path.startswith("kraken"):
-      files.append(os.path.join(testroot, "%s-data.js" % path))
-      files.append(os.path.join(testroot, "%s.js" % path))
-    elif path.startswith("octane"):
-      files.append(os.path.join(testroot, "octane/base.js"))
-      files.append(os.path.join(testroot, "%s.js" % path))
-      if path.startswith("octane/gbemu"):
-        files.append(os.path.join(testroot, "octane/gbemu-part2.js"))
-      elif path.startswith("octane/typescript"):
-        files.append(os.path.join(testroot,
-                                  "octane/typescript-compiler.js"))
-        files.append(os.path.join(testroot, "octane/typescript-input.js"))
-      elif path.startswith("octane/zlib"):
-        files.append(os.path.join(testroot, "octane/zlib-data.js"))
+    if path.parts[0] == "kraken":
+      files.append(testroot / f"{path}-data.js")
+      files.append(testroot / f"{path}.js")
+    elif path.parts[0] == "octane":
+      files.append(testroot / "octane/base.js")
+      files.append(testroot / f"{path}.js")
+      if path.parts[1] == "gbemu":
+        files.append(testroot / "octane/gbemu-part2.js")
+      elif path.parts[1] == "typescript":
+        files.append(testroot / "octane/typescript-compiler.js")
+        files.append(testroot / "octane/typescript-input.js")
+      elif path.parts[1] == "zlib":
+        files.append(testroot / "octane/zlib-data.js")
       files += ["-e", "BenchmarkSuite.RunSuites({});"]
-    elif path.startswith("sunspider"):
-      files.append(os.path.join(testroot, "%s.js" % path))
+    elif path.parts[0] == "sunspider":
+      files.append(self._get_source_path())
     return files
 
   def _get_source_path(self):
-    return os.path.join(self.suite.testroot, self.path + self._get_suffix())
-
-
-def GetSuite(*args, **kwargs):
-  return TestSuite(*args, **kwargs)
+    return self.suite.testroot / self.path_js

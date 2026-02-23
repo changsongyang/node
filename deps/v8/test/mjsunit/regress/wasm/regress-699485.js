@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function() {
 "use asm";
 var builder = new WasmModuleBuilder();
-builder.addMemory(0, 5, false);
+builder.addMemory(0, 5);
 builder.addFunction("regression_699485", kSig_i_v)
   .addBody([
       kExprI32Const, 0x04,
       kExprNop,
-      kExprGrowMemory, 0x00,
+      kExprMemoryGrow, 0x00,
       ]).exportFunc();
 let module = builder.instantiate();
 assertEquals(0, module.exports.regression_699485());

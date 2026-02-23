@@ -1,7 +1,7 @@
 /*
- * Copyright 2000-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2000-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -11,6 +11,8 @@
 #include "internal/cryptlib.h"
 #include <openssl/asn1t.h>
 
+#define COPY_SIZE(a, b) (sizeof(a) < sizeof(b) ? sizeof(a) : sizeof(b))
+
 /*
  * Custom primitive type for long handling. This converts between an
  * ASN1_INTEGER and a long directly.
@@ -19,40 +21,39 @@
 static int long_new(ASN1_VALUE **pval, const ASN1_ITEM *it);
 static void long_free(ASN1_VALUE **pval, const ASN1_ITEM *it);
 
-static int long_i2c(ASN1_VALUE **pval, unsigned char *cont, int *putype,
-                    const ASN1_ITEM *it);
+static int long_i2c(const ASN1_VALUE **pval, unsigned char *cont, int *putype,
+    const ASN1_ITEM *it);
 static int long_c2i(ASN1_VALUE **pval, const unsigned char *cont, int len,
-                    int utype, char *free_cont, const ASN1_ITEM *it);
-static int long_print(BIO *out, ASN1_VALUE **pval, const ASN1_ITEM *it,
-                      int indent, const ASN1_PCTX *pctx);
+    int utype, char *free_cont, const ASN1_ITEM *it);
+static int long_print(BIO *out, const ASN1_VALUE **pval, const ASN1_ITEM *it,
+    int indent, const ASN1_PCTX *pctx);
 
 static ASN1_PRIMITIVE_FUNCS long_pf = {
     NULL, 0,
     long_new,
     long_free,
-    long_free,                  /* Clear should set to initial value */
+    long_free, /* Clear should set to initial value */
     long_c2i,
     long_i2c,
     long_print
 };
 
 ASN1_ITEM_start(LONG)
-        ASN1_ITYPE_PRIMITIVE, V_ASN1_INTEGER, NULL, 0, &long_pf, ASN1_LONG_UNDEF, "LONG"
-ASN1_ITEM_end(LONG)
+    ASN1_ITYPE_PRIMITIVE,
+    V_ASN1_INTEGER, NULL, 0, &long_pf, ASN1_LONG_UNDEF, "LONG" ASN1_ITEM_end(LONG)
 
-ASN1_ITEM_start(ZLONG)
-        ASN1_ITYPE_PRIMITIVE, V_ASN1_INTEGER, NULL, 0, &long_pf, 0, "ZLONG"
-ASN1_ITEM_end(ZLONG)
+                                                            ASN1_ITEM_start(ZLONG) ASN1_ITYPE_PRIMITIVE,
+    V_ASN1_INTEGER, NULL, 0, &long_pf, 0, "ZLONG" ASN1_ITEM_end(ZLONG)
 
-static int long_new(ASN1_VALUE **pval, const ASN1_ITEM *it)
+                                              static int long_new(ASN1_VALUE **pval, const ASN1_ITEM *it)
 {
-    *(long *)pval = it->size;
+    memcpy(pval, &it->size, COPY_SIZE(*pval, it->size));
     return 1;
 }
 
 static void long_free(ASN1_VALUE **pval, const ASN1_ITEM *it)
 {
-    *(long *)pval = it->size;
+    memcpy(pval, &it->size, COPY_SIZE(*pval, it->size));
 }
 
 /*
@@ -80,18 +81,14 @@ static int num_bits_ulong(unsigned long value)
     return (int)ret;
 }
 
-static int long_i2c(ASN1_VALUE **pval, unsigned char *cont, int *putype,
-                    const ASN1_ITEM *it)
+static int long_i2c(const ASN1_VALUE **pval, unsigned char *cont, int *putype,
+    const ASN1_ITEM *it)
 {
     long ltmp;
     unsigned long utmp, sign;
     int clen, pad, i;
-    /* this exists to bypass broken gcc optimization */
-    char *cp = (char *)pval;
 
-    /* use memcpy, because we may not be long aligned */
-    memcpy(&ltmp, cp, sizeof(long));
-
+    memcpy(&ltmp, pval, COPY_SIZE(*pval, ltmp));
     if (ltmp == it->size)
         return -1;
     /*
@@ -128,12 +125,11 @@ static int long_i2c(ASN1_VALUE **pval, unsigned char *cont, int *putype,
 }
 
 static int long_c2i(ASN1_VALUE **pval, const unsigned char *cont, int len,
-                    int utype, char *free_cont, const ASN1_ITEM *it)
+    int utype, char *free_cont, const ASN1_ITEM *it)
 {
     int i;
     long ltmp;
     unsigned long utmp = 0, sign = 0x100;
-    char *cp = (char *)pval;
 
     if (len > 1) {
         /*
@@ -155,7 +151,7 @@ static int long_c2i(ASN1_VALUE **pval, const unsigned char *cont, int len,
         }
     }
     if (len > (int)sizeof(long)) {
-        ASN1err(ASN1_F_LONG_C2I, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
+        ERR_raise(ERR_LIB_ASN1, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
         return 0;
     }
 
@@ -166,7 +162,7 @@ static int long_c2i(ASN1_VALUE **pval, const unsigned char *cont, int len,
         else
             sign = 0;
     } else if (((sign ^ cont[0]) & 0x80) == 0) { /* same sign bit? */
-        ASN1err(ASN1_F_LONG_C2I, ASN1_R_ILLEGAL_PADDING);
+        ERR_raise(ERR_LIB_ASN1, ASN1_R_ILLEGAL_PADDING);
         return 0;
     }
     utmp = 0;
@@ -176,21 +172,24 @@ static int long_c2i(ASN1_VALUE **pval, const unsigned char *cont, int len,
     }
     ltmp = (long)utmp;
     if (ltmp < 0) {
-        ASN1err(ASN1_F_LONG_C2I, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
+        ERR_raise(ERR_LIB_ASN1, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
         return 0;
     }
     if (sign)
         ltmp = -ltmp - 1;
     if (ltmp == it->size) {
-        ASN1err(ASN1_F_LONG_C2I, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
+        ERR_raise(ERR_LIB_ASN1, ASN1_R_INTEGER_TOO_LARGE_FOR_LONG);
         return 0;
     }
-    memcpy(cp, &ltmp, sizeof(long));
+    memcpy(pval, &ltmp, COPY_SIZE(*pval, ltmp));
     return 1;
 }
 
-static int long_print(BIO *out, ASN1_VALUE **pval, const ASN1_ITEM *it,
-                      int indent, const ASN1_PCTX *pctx)
+static int long_print(BIO *out, const ASN1_VALUE **pval, const ASN1_ITEM *it,
+    int indent, const ASN1_PCTX *pctx)
 {
-    return BIO_printf(out, "%ld\n", *(long *)pval);
+    long l;
+
+    memcpy(&l, pval, COPY_SIZE(*pval, l));
+    return BIO_printf(out, "%ld\n", l);
 }

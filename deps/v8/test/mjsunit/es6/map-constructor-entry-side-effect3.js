@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 function TestMapConstructorEntrySideEffect(ctor) {
   const k1 = {};
@@ -28,6 +28,10 @@ function TestMapConstructorEntrySideEffect(ctor) {
   assertTrue(col.has(k3));
 }
 
+%PrepareFunctionForOptimization(TestMapConstructorEntrySideEffect);
+%EnsureFeedbackVectorForFunction(assertTrue);
+%EnsureFeedbackVectorForFunction(assertFalse);
+%EnsureFeedbackVectorForFunction(assertEquals);
 TestMapConstructorEntrySideEffect(Map);
 TestMapConstructorEntrySideEffect(Map);
 TestMapConstructorEntrySideEffect(Map);
@@ -36,6 +40,7 @@ TestMapConstructorEntrySideEffect(Map);
 assertOptimized(TestMapConstructorEntrySideEffect);
 
 TestMapConstructorEntrySideEffect(WeakMap);
+%PrepareFunctionForOptimization(TestMapConstructorEntrySideEffect);
 TestMapConstructorEntrySideEffect(WeakMap);
 TestMapConstructorEntrySideEffect(WeakMap);
 %OptimizeFunctionOnNextCall(TestMapConstructorEntrySideEffect);

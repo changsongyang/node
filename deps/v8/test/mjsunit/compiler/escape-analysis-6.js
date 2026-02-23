@@ -41,6 +41,8 @@ function g() {
   return x.length;
 }
 
+%PrepareFunctionForOptimization(f);
+%PrepareFunctionForOptimization(g);
 assertEquals(5, g());
 assertEquals(5, g());
 %OptimizeFunctionOnNextCall(g);

@@ -1,20 +1,30 @@
 /*
  * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
 #include "internal/cryptlib.h"
-#include "bn_lcl.h"
+#include "bn_local.h"
 
 /* r must not be a */
 /*
  * I've just gone over this and it is now %20 faster on x86 - eay - 27 Jun 96
  */
 int BN_sqr(BIGNUM *r, const BIGNUM *a, BN_CTX *ctx)
+{
+    int ret = bn_sqr_fixed_top(r, a, ctx);
+
+    bn_correct_top(r);
+    bn_check_top(r);
+
+    return ret;
+}
+
+int bn_sqr_fixed_top(BIGNUM *r, const BIGNUM *a, BN_CTX *ctx)
 {
     int max, al;
     int ret = 0;
@@ -32,10 +42,10 @@ int BN_sqr(BIGNUM *r, const BIGNUM *a, BN_CTX *ctx)
     BN_CTX_start(ctx);
     rr = (a != r) ? r : BN_CTX_get(ctx);
     tmp = BN_CTX_get(ctx);
-    if (!rr || !tmp)
+    if (rr == NULL || tmp == NULL)
         goto err;
 
-    max = 2 * al;               /* Non-zero (from above) */
+    max = 2 * al; /* Non-zero (from above) */
     if (bn_wexpand(rr, max) == NULL)
         goto err;
 
@@ -83,16 +93,16 @@ int BN_sqr(BIGNUM *r, const BIGNUM *a, BN_CTX *ctx)
 
     rr->neg = 0;
     rr->top = max;
-    bn_correct_top(rr);
+    rr->flags |= BN_FLG_FIXED_TOP;
     if (r != rr && BN_copy(r, rr) == NULL)
         goto err;
 
     ret = 1;
- err:
+err:
     bn_check_top(rr);
     bn_check_top(tmp);
     BN_CTX_end(ctx);
-    return (ret);
+    return ret;
 }
 
 /* tmp must have 2*n words */
@@ -150,18 +160,18 @@ void bn_sqr_recursive(BN_ULONG *r, const BN_ULONG *a, int n2, BN_ULONG *t)
     BN_ULONG ln, lo, *p;
 
     if (n2 == 4) {
-# ifndef BN_SQR_COMBA
+#ifndef BN_SQR_COMBA
         bn_sqr_normal(r, a, 4, t);
-# else
+#else
         bn_sqr_comba4(r, a);
-# endif
+#endif
         return;
     } else if (n2 == 8) {
-# ifndef BN_SQR_COMBA
+#ifndef BN_SQR_COMBA
         bn_sqr_normal(r, a, 8, t);
-# else
+#else
         bn_sqr_comba8(r, a);
-# endif
+#endif
         return;
     }
     if (n2 < BN_SQR_RECURSIVE_SIZE_NORMAL) {

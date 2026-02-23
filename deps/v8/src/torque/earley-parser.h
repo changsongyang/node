@@ -6,16 +6,15 @@
 #define V8_TORQUE_EARLEY_PARSER_H_
 
 #include <map>
+#include <memory>
+#include <optional>
 #include <vector>
 
-#include "src/base/optional.h"
-#include "src/torque/contextual.h"
+#include "src/base/contextual.h"
 #include "src/torque/source-positions.h"
 #include "src/torque/utils.h"
 
-namespace v8 {
-namespace internal {
-namespace torque {
+namespace v8::internal::torque {
 
 class Symbol;
 class Item;
@@ -37,6 +36,67 @@ class ParseResultHolderBase {
 
  private:
   const TypeId type_id_;
+};
+
+enum class ParseResultHolderBase::TypeId {
+  kStdString,
+  kBool,
+  kInt32,
+  kDouble,
+  kIntegerLiteral,
+  kStdVectorOfString,
+  kExpressionPtr,
+  kIdentifierPtr,
+  kOptionalIdentifierPtr,
+  kStatementPtr,
+  kDeclarationPtr,
+  kTypeExpressionPtr,
+  kOptionalTypeExpressionPtr,
+  kTryHandlerPtr,
+  kNameAndTypeExpression,
+  kEnumEntry,
+  kStdVectorOfEnumEntry,
+  kImplicitParameters,
+  kOptionalImplicitParameters,
+  kNameAndExpression,
+  kAnnotation,
+  kVectorOfAnnotation,
+  kAnnotationParameter,
+  kOptionalAnnotationParameter,
+  kClassFieldExpression,
+  kStructFieldExpression,
+  kBitFieldDeclaration,
+  kStdVectorOfNameAndTypeExpression,
+  kStdVectorOfNameAndExpression,
+  kStdVectorOfClassFieldExpression,
+  kStdVectorOfStructFieldExpression,
+  kStdVectorOfBitFieldDeclaration,
+  kIncrementDecrementOperator,
+  kOptionalStdString,
+  kStdVectorOfStatementPtr,
+  kStdVectorOfDeclarationPtr,
+  kStdVectorOfStdVectorOfDeclarationPtr,
+  kStdVectorOfExpressionPtr,
+  kExpressionWithSource,
+  kParameterList,
+  kTypeList,
+  kOptionalTypeList,
+  kLabelAndTypes,
+  kStdVectorOfLabelAndTypes,
+  kStdVectorOfTryHandlerPtr,
+  kOptionalStatementPtr,
+  kOptionalExpressionPtr,
+  kTypeswitchCase,
+  kStdVectorOfTypeswitchCase,
+  kStdVectorOfIdentifierPtr,
+  kOptionalClassBody,
+  kGenericParameter,
+  kGenericParameters,
+
+  kJsonValue,
+  kJsonMember,
+  kStdVectorOfJsonValue,
+  kStdVectorOfJsonMember,
 };
 
 using ParseResultTypeId = ParseResultHolderBase::TypeId;
@@ -71,12 +131,16 @@ class ParseResult {
   explicit ParseResult(T x) : value_(new ParseResultHolder<T>(std::move(x))) {}
 
   template <class T>
-  const T& Cast() const {
+  const T& Cast() const& {
     return value_->Cast<T>();
   }
   template <class T>
-  T& Cast() {
+  T& Cast() & {
     return value_->Cast<T>();
+  }
+  template <class T>
+  T&& Cast() && {
+    return std::move(value_->Cast<T>());
   }
 
  private:
@@ -99,10 +163,9 @@ class ParseResultIterator {
   explicit ParseResultIterator(std::vector<ParseResult> results,
                                MatchedInput matched_input)
       : results_(std::move(results)), matched_input_(matched_input) {}
-  ~ParseResultIterator() {
-    // Check that all parse results have been used.
-    CHECK_EQ(results_.size(), i_);
-  }
+
+  ParseResultIterator(const ParseResultIterator&) = delete;
+  ParseResultIterator& operator=(const ParseResultIterator&) = delete;
 
   ParseResult Next() {
     CHECK_LT(i_, results_.size());
@@ -120,8 +183,6 @@ class ParseResultIterator {
   std::vector<ParseResult> results_;
   size_t i_ = 0;
   MatchedInput matched_input_;
-
-  DISALLOW_COPY_AND_MOVE_AND_ASSIGN(ParseResultIterator);
 };
 
 struct LexerResult {
@@ -130,12 +191,21 @@ struct LexerResult {
 };
 
 using Action =
-    base::Optional<ParseResult> (*)(ParseResultIterator* child_results);
+    std::optional<ParseResult> (*)(ParseResultIterator* child_results);
 
-inline base::Optional<ParseResult> DefaultAction(
+inline std::optional<ParseResult> DefaultAction(
     ParseResultIterator* child_results) {
-  if (!child_results->HasNext()) return base::nullopt;
+  if (!child_results->HasNext()) return std::nullopt;
   return child_results->Next();
+}
+
+template <class T, Action action>
+inline Action AsSingletonVector() {
+  return [](ParseResultIterator* child_results) -> std::optional<ParseResult> {
+    auto result = action(child_results);
+    if (!result) return result;
+    return ParseResult{std::vector<T>{(*result).Cast<T>()}};
+  };
 }
 
 // A rule of the context-free grammar. Each rule can have an action attached to
@@ -157,7 +227,7 @@ class Rule final {
     left_hand_side_ = left_hand_side;
   }
 
-  V8_EXPORT_PRIVATE base::Optional<ParseResult> RunAction(
+  V8_EXPORT_PRIVATE std::optional<ParseResult> RunAction(
       const Item* completed_item, const LexerResult& tokens) const;
 
  private:
@@ -175,8 +245,12 @@ class Rule final {
 // used in the parser.
 class Symbol {
  public:
-  Symbol() : Symbol({}) {}
+  Symbol() = default;
   Symbol(std::initializer_list<Rule> rules) { *this = rules; }
+
+  // Disallow copying and moving to ensure Symbol has a stable address.
+  Symbol(const Symbol&) = delete;
+  Symbol& operator=(const Symbol&) = delete;
 
   V8_EXPORT_PRIVATE Symbol& operator=(std::initializer_list<Rule> rules);
 
@@ -185,18 +259,15 @@ class Symbol {
   size_t rule_number() const { return rules_.size(); }
 
   void AddRule(const Rule& rule) {
-    rules_.push_back(base::make_unique<Rule>(rule));
+    rules_.push_back(std::make_unique<Rule>(rule));
     rules_.back()->SetLeftHandSide(this);
   }
 
-  V8_EXPORT_PRIVATE base::Optional<ParseResult> RunAction(
+  V8_EXPORT_PRIVATE std::optional<ParseResult> RunAction(
       const Item* item, const LexerResult& tokens);
 
  private:
   std::vector<std::unique_ptr<Rule>> rules_;
-
-  // Disallow copying and moving to ensure Symbol has a stable address.
-  DISALLOW_COPY_AND_MOVE_AND_ASSIGN(Symbol);
 };
 
 // Items are the core datastructure of Earley's algorithm.
@@ -252,10 +323,13 @@ class Item {
   void CheckAmbiguity(const Item& other, const LexerResult& tokens) const;
 
   MatchedInput GetMatchedInput(const LexerResult& tokens) const {
-    return {tokens.token_contents[start_].begin,
-            start_ == pos_ ? tokens.token_contents[start_].begin
-                           : tokens.token_contents[pos_ - 1].end,
-            tokens.token_contents[start_].pos};
+    const MatchedInput& start = tokens.token_contents[start_];
+    const MatchedInput& end = start_ == pos_ ? tokens.token_contents[start_]
+                                             : tokens.token_contents[pos_ - 1];
+    CHECK_EQ(start.pos.source, end.pos.source);
+    SourcePosition combined{start.pos.source, start.pos.start, end.pos.end};
+
+    return {start.begin, end.end, combined};
   }
 
   // We exclude {prev_} and {child_} from equality and hash computations,
@@ -285,8 +359,8 @@ class Item {
   const Item* child_ = nullptr;
 };
 
-inline base::Optional<ParseResult> Symbol::RunAction(
-    const Item* item, const LexerResult& tokens) {
+inline std::optional<ParseResult> Symbol::RunAction(const Item* item,
+                                                    const LexerResult& tokens) {
   DCHECK(item->IsComplete());
   DCHECK_EQ(item->left(), this);
   return item->rule()->RunAction(item, tokens);
@@ -296,8 +370,8 @@ V8_EXPORT_PRIVATE const Item* RunEarleyAlgorithm(
     Symbol* start, const LexerResult& tokens,
     std::unordered_set<Item, base::hash<Item>>* processed);
 
-inline base::Optional<ParseResult> ParseTokens(Symbol* start,
-                                               const LexerResult& tokens) {
+inline std::optional<ParseResult> ParseTokens(Symbol* start,
+                                              const LexerResult& tokens) {
   std::unordered_set<Item, base::hash<Item>> table;
   const Item* final_item = RunEarleyAlgorithm(start, tokens, &table);
   return start->RunAction(final_item, tokens);
@@ -345,7 +419,7 @@ class Grammar {
 
   explicit Grammar(Symbol* start) : start_(start) {}
 
-  base::Optional<ParseResult> Parse(const std::string& input) {
+  std::optional<ParseResult> Parse(const std::string& input) {
     LexerResult tokens = lexer().RunLexer(input);
     return ParseTokens(start_, tokens);
   }
@@ -358,8 +432,9 @@ class Grammar {
   // NewSymbol() allocates a fresh symbol and stores it in the current grammar.
   // This is necessary to define helpers that create new symbols.
   Symbol* NewSymbol(std::initializer_list<Rule> rules = {}) {
-    Symbol* result = new Symbol(rules);
-    generated_symbols_.push_back(std::unique_ptr<Symbol>(result));
+    auto symbol = std::make_unique<Symbol>(rules);
+    Symbol* result = symbol.get();
+    generated_symbols_.push_back(std::move(symbol));
     return result;
   }
 
@@ -374,7 +449,7 @@ class Grammar {
 
   // The action MatchInput() produces the input matched by the rule as
   // result.
-  static base::Optional<ParseResult> YieldMatchedInput(
+  static std::optional<ParseResult> YieldMatchedInput(
       ParseResultIterator* child_results) {
     return ParseResult{child_results->matched_input().ToString()};
   }
@@ -386,21 +461,21 @@ class Grammar {
   }
 
   template <class T, T value>
-  static base::Optional<ParseResult> YieldIntegralConstant(
+  static std::optional<ParseResult> YieldIntegralConstant(
       ParseResultIterator* child_results) {
     return ParseResult{value};
   }
 
   template <class T>
-  static base::Optional<ParseResult> YieldDefaultValue(
+  static std::optional<ParseResult> YieldDefaultValue(
       ParseResultIterator* child_results) {
     return ParseResult{T{}};
   }
 
   template <class From, class To>
-  static base::Optional<ParseResult> CastParseResult(
+  static std::optional<ParseResult> CastParseResult(
       ParseResultIterator* child_results) {
-    To result = std::move(child_results->NextAs<From>());
+    To result = child_results->NextAs<From>();
     return ParseResult{std::move(result)};
   }
 
@@ -413,7 +488,7 @@ class Grammar {
   }
 
   template <class T>
-  static base::Optional<ParseResult> MakeSingletonVector(
+  static std::optional<ParseResult> MakeSingletonVector(
       ParseResultIterator* child_results) {
     T x = child_results->NextAs<T>();
     std::vector<T> result;
@@ -422,7 +497,7 @@ class Grammar {
   }
 
   template <class T>
-  static base::Optional<ParseResult> MakeExtendedVector(
+  static std::optional<ParseResult> MakeExtendedVector(
       ParseResultIterator* child_results) {
     std::vector<T> l = child_results->NextAs<std::vector<T>>();
     T x = child_results->NextAs<T>();
@@ -433,8 +508,7 @@ class Grammar {
   // For example, NonemptyList(Token("A"), Token(",")) parses any of
   // A or A,A or A,A,A and so on.
   template <class T>
-  Symbol* NonemptyList(Symbol* element,
-                       base::Optional<Symbol*> separator = {}) {
+  Symbol* NonemptyList(Symbol* element, std::optional<Symbol*> separator = {}) {
     Symbol* list = NewSymbol();
     *list = {Rule({element}, MakeSingletonVector<T>),
              separator
@@ -444,13 +518,13 @@ class Grammar {
   }
 
   template <class T>
-  Symbol* List(Symbol* element, base::Optional<Symbol*> separator = {}) {
+  Symbol* List(Symbol* element, std::optional<Symbol*> separator = {}) {
     return TryOrDefault<std::vector<T>>(NonemptyList<T>(element, separator));
   }
 
   template <class T>
   Symbol* Optional(Symbol* x) {
-    return TryOrDefault<base::Optional<T>, T>(x);
+    return TryOrDefault<std::optional<T>, T>(x);
   }
 
   Symbol* CheckIf(Symbol* x) {
@@ -466,8 +540,6 @@ class Grammar {
   Symbol* start_;
 };
 
-}  // namespace torque
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::torque
 
 #endif  // V8_TORQUE_EARLEY_PARSER_H_

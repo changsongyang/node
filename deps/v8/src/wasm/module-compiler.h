@@ -5,69 +5,99 @@
 #ifndef V8_WASM_MODULE_COMPILER_H_
 #define V8_WASM_MODULE_COMPILER_H_
 
+#if !V8_ENABLE_WEBASSEMBLY
+#error This header should only be included if WebAssembly is enabled.
+#endif  // !V8_ENABLE_WEBASSEMBLY
+
 #include <atomic>
-#include <functional>
 #include <memory>
 
-#include "src/cancelable-task.h"
-#include "src/globals.h"
+#include "include/v8-metrics.h"
+#include "src/base/platform/time.h"
+#include "src/common/globals.h"
+#include "src/tasks/cancelable-task.h"
+#include "src/wasm/compilation-environment.h"
 #include "src/wasm/wasm-features.h"
+#include "src/wasm/wasm-import-wrapper-cache.h"
 #include "src/wasm/wasm-module.h"
 
 namespace v8 {
+
+namespace base {
+template <typename T>
+class Vector;
+}  // namespace base
+
 namespace internal {
 
 class JSArrayBuffer;
 class JSPromise;
-class Counters;
 class WasmModuleObject;
 class WasmInstanceObject;
-
-template <typename T>
-class Vector;
+class WasmTrustedInstanceData;
 
 namespace wasm {
 
+struct CompilationEnv;
 class CompilationResultResolver;
-class CompilationState;
 class ErrorThrower;
 class ModuleCompiler;
 class NativeModule;
+class ProfileInformation;
+class StreamingDecoder;
 class WasmCode;
-struct ModuleEnv;
 struct WasmModule;
 
-struct CompilationStateDeleter {
-  void operator()(CompilationState* compilation_state) const;
-};
-
-// Wrapper to create a CompilationState exists in order to avoid having
-// the CompilationState in the header file.
-std::unique_ptr<CompilationState, CompilationStateDeleter> NewCompilationState(
-    Isolate* isolate, const ModuleEnv& env);
-
-ModuleEnv* GetModuleEnv(CompilationState* compilation_state);
-
-MaybeHandle<WasmModuleObject> CompileToModuleObject(
-    Isolate* isolate, const WasmFeatures& enabled, ErrorThrower* thrower,
-    std::shared_ptr<const WasmModule> module, const ModuleWireBytes& wire_bytes,
-    Handle<Script> asm_js_script, Vector<const byte> asm_js_offset_table_bytes);
-
-MaybeHandle<WasmInstanceObject> InstantiateToInstanceObject(
-    Isolate* isolate, ErrorThrower* thrower,
-    Handle<WasmModuleObject> module_object, MaybeHandle<JSReceiver> imports,
-    MaybeHandle<JSArrayBuffer> memory);
-
 V8_EXPORT_PRIVATE
-void CompileJsToWasmWrappers(Isolate* isolate,
-                             Handle<WasmModuleObject> module_object);
+std::shared_ptr<NativeModule> CompileToNativeModule(
+    Isolate* isolate, WasmEnabledFeatures enabled_features,
+    WasmDetectedFeatures detected_features, CompileTimeImports compile_imports,
+    ErrorThrower* thrower, std::shared_ptr<const WasmModule> module,
+    base::OwnedVector<const uint8_t> wire_bytes, int compilation_id,
+    v8::metrics::Recorder::ContextId context_id, ProfileInformation* pgo_info);
 
-V8_EXPORT_PRIVATE Handle<Script> CreateWasmScript(
-    Isolate* isolate, const ModuleWireBytes& wire_bytes);
+V8_EXPORT_PRIVATE WasmError ValidateAndSetBuiltinImports(
+    const WasmModule* module, base::Vector<const uint8_t> wire_bytes,
+    const CompileTimeImports& imports, WasmDetectedFeatures* detected);
 
-// Triggered by the WasmCompileLazy builtin.
-// Returns the instruction start of the compiled code object.
-Address CompileLazy(Isolate*, NativeModule*, uint32_t func_index);
+// Compiles the wrapper for this (kind, sig) pair and sets the corresponding
+// cache entry. Assumes the key already exists in the cache but has not been
+// compiled yet.
+V8_EXPORT_PRIVATE
+std::shared_ptr<wasm::WasmImportWrapperHandle> CompileImportWrapperForTest(
+    Isolate* isolate, ImportCallKind kind, const CanonicalSig* sig,
+    int expected_arity, Suspend suspend);
+
+// Triggered by the WasmCompileLazy builtin. The return value indicates whether
+// compilation was successful. Lazy compilation can fail only if validation is
+// also lazy.
+bool CompileLazy(Isolate*, NativeModule*, int func_index);
+
+// Throws the compilation error after failed lazy compilation.
+void ThrowLazyCompilationError(Isolate* isolate,
+                               const NativeModule* native_module,
+                               int func_index);
+
+// Trigger tier-up of a particular function to TurboFan. If tier-up was already
+// triggered, we instead increase the priority with exponential back-off.
+V8_EXPORT_PRIVATE void TriggerTierUp(Isolate*, Tagged<WasmTrustedInstanceData>,
+                                     int func_index);
+// Synchronous version of the above.
+V8_EXPORT_PRIVATE void TierUpNowForTesting(Isolate*,
+                                           Tagged<WasmTrustedInstanceData>,
+                                           int func_index);
+// Same, but all functions.
+V8_EXPORT_PRIVATE void TierUpAllForTesting(Isolate*,
+                                           Tagged<WasmTrustedInstanceData>);
+
+V8_EXPORT_PRIVATE void InitializeCompilationForTesting(
+    NativeModule* native_module);
+
+// Publish a set of detected features in a given isolate. If this is the initial
+// compilation, also the "kWasmModuleCompilation" use counter is incremented to
+// serve as a baseline for the other detected features.
+void PublishDetectedFeatures(WasmDetectedFeatures, Isolate*,
+                             bool is_initial_compilation);
 
 // Encapsulates all the state and steps of an asynchronous compilation.
 // An asynchronous compile job consists of a number of tasks that are executed
@@ -78,13 +108,19 @@ Address CompileLazy(Isolate*, NativeModule*, uint32_t func_index);
 // TODO(wasm): factor out common parts of this with the synchronous pipeline.
 class AsyncCompileJob {
  public:
-  AsyncCompileJob(Isolate* isolate, const WasmFeatures& enabled_features,
-                  std::unique_ptr<byte[]> bytes_copy, size_t length,
-                  Handle<Context> context,
-                  std::shared_ptr<CompilationResultResolver> resolver);
+  AsyncCompileJob(Isolate* isolate, WasmEnabledFeatures enabled_features,
+                  CompileTimeImports compile_imports,
+                  base::OwnedVector<const uint8_t> bytes,
+                  DirectHandle<Context> context,
+                  DirectHandle<NativeContext> incumbent_context,
+                  const char* api_method_name,
+                  std::shared_ptr<CompilationResultResolver> resolver,
+                  int compilation_id);
   ~AsyncCompileJob();
 
-  void Start();
+  // Start asynchronous decoding; this triggers the full asynchronous
+  // (non-streaming) compilation.
+  void StartAsyncDecoding();
 
   std::shared_ptr<StreamingDecoder> CreateStreamingDecoder();
 
@@ -93,42 +129,79 @@ class AsyncCompileJob {
 
   Isolate* isolate() const { return isolate_; }
 
+  DirectHandle<NativeContext> context() const { return native_context_; }
+  v8::metrics::Recorder::ContextId context_id() const { return context_id_; }
+
  private:
   class CompileTask;
   class CompileStep;
+  class CompilationStateCallback;
 
   // States of the AsyncCompileJob.
-  class DecodeModule;            // Step 1  (async)
-  class DecodeFail;              // Step 1b (sync)
-  class PrepareAndStartCompile;  // Step 2  (sync)
-  class CompileFailed;           // Step 4b (sync)
-  class CompileWrappers;         // Step 5  (sync)
-  class FinishModule;            // Step 6  (sync)
+  // Step 1 (async). Decodes the wasm module (only called for non-streaming
+  //                 compilation; streaming uses the StreamingDecoder instead).
+  // --> Fail on decoding failure,
+  // --> PrepareNativeModule on success.
+  class DecodeModule;
 
-  const std::shared_ptr<Counters>& async_counters() const {
-    return async_counters_;
+  // Step 2 (async). Allocates NativeModule and potentially starts background
+  // compilation.
+  // --> finish directly on native module cache hit,
+  // --> finish directly on validation error,
+  // --> trigger eager compilation, if any; FinishCompilation is triggered when
+  // done.
+  class PrepareNativeModule;
+
+  // Step 3 (sync). Compilation finished. Finalize the module and resolve the
+  // promise.
+  class FinishCompilation;
+
+  // Step 4 (sync). Decoding, validation or compilation failed. Reject the
+  // promise.
+  class Fail;
+
+  friend class AsyncStreamingProcessor;
+
+  // Decrements the number of outstanding finishers. The last caller of this
+  // function should finish the asynchronous compilation, see the comment on
+  // {outstanding_finishers_}.
+  V8_WARN_UNUSED_RESULT bool DecrementAndCheckFinisherCount() {
+    DCHECK_LT(0, outstanding_finishers_.load());
+    return outstanding_finishers_.fetch_sub(1) == 1;
   }
-  Counters* counters() const { return async_counters().get(); }
 
-  void FinishCompile();
+  void CreateNativeModule(std::shared_ptr<const WasmModule> module,
+                          size_t code_size_estimate);
+  // Return the module (cached or freshly allocated) and true for cache hit,
+  // false for cache miss.
+  std::tuple<std::shared_ptr<NativeModule>, bool> GetOrCreateNativeModule(
+      std::shared_ptr<const WasmModule> module, size_t code_size_estimate);
 
-  void AsyncCompileFailed(Handle<Object> error_reason);
+  // {FinishCompile} and {Failed} invalidate the {AsyncCompileJob}, so we only
+  // allow to call them on r-value references to make this clear at call sites.
+  void FinishCompile(std::shared_ptr<NativeModule> final_native_module,
+                     bool cache_hit) &&;
+  void Failed() &&;
 
-  void AsyncCompileSucceeded(Handle<WasmModuleObject> result);
+  void AsyncCompileSucceeded(DirectHandle<WasmModuleObject> result);
+
+  void FinishSuccessfully();
 
   void StartForegroundTask();
-  void ExecuteForegroundTaskImmediately();
-
   void StartBackgroundTask();
 
+  enum UseExistingForegroundTask : bool {
+    kUseExistingForegroundTask = true,
+    kAssertNoExistingForegroundTask = false
+  };
   // Switches to the compilation step {Step} and starts a foreground task to
-  // execute it.
-  template <typename Step, typename... Args>
+  // execute it. Most of the time we know that there cannot be a running
+  // foreground task. If there might be one, then pass
+  // kUseExistingForegroundTask to avoid spawning a second one.
+  template <typename Step,
+            UseExistingForegroundTask = kAssertNoExistingForegroundTask,
+            typename... Args>
   void DoSync(Args&&... args);
-
-  // Switches to the compilation step {Step} and immediately executes that step.
-  template <typename Step, typename... Args>
-  void DoImmediately(Args&&... args);
 
   // Switches to the compilation step {Step} and starts a background task to
   // execute it.
@@ -140,23 +213,30 @@ class AsyncCompileJob {
   template <typename Step, typename... Args>
   void NextStep(Args&&... args);
 
-  friend class AsyncStreamingProcessor;
-
-  Isolate* isolate_;
-  const WasmFeatures enabled_features_;
-  const std::shared_ptr<Counters> async_counters_;
-  // Copy of the module wire bytes, moved into the {native_module_} on its
+  Isolate* const isolate_;
+  const char* const api_method_name_;
+  const WasmEnabledFeatures enabled_features_;
+  WasmDetectedFeatures detected_features_;
+  CompileTimeImports compile_imports_;
+  base::TimeTicks start_time_;
+  base::TimeTicks compilation_finished_time_;
+  // Copy of the module wire bytes, moved into the {new_native_module_} on its
   // creation.
-  std::unique_ptr<byte[]> bytes_copy_;
-  // Reference to the wire bytes (hold in {bytes_copy_} or as part of
-  // {native_module_}).
+  base::OwnedVector<const uint8_t> bytes_copy_;
+  // Reference to the wire bytes (held in {bytes_copy_} or as part of
+  // {new_native_module_}).
   ModuleWireBytes wire_bytes_;
-  Handle<Context> native_context_;
-  std::shared_ptr<CompilationResultResolver> resolver_;
+  IndirectHandle<NativeContext> native_context_;
+  IndirectHandle<NativeContext> incumbent_context_;
+  v8::metrics::Recorder::ContextId context_id_;
+  const std::shared_ptr<CompilationResultResolver> resolver_;
 
-  std::vector<DeferredHandles*> deferred_handles_;
-  Handle<WasmModuleObject> module_object_;
-  NativeModule* native_module_ = nullptr;
+  IndirectHandle<WasmModuleObject> module_object_;
+  // The {NativeModule} which was created for this async compilation.
+  // This is only set once, and stays alive as long as this job stays alive.
+  // Note that the finally used module can be different, if we find a module in
+  // the cache.
+  std::shared_ptr<NativeModule> new_native_module_;
 
   std::unique_ptr<CompileStep> step_;
   CancelableTaskManager background_task_manager_;
@@ -168,13 +248,6 @@ class AsyncCompileJob {
   // compilation can be finished.
   std::atomic<int32_t> outstanding_finishers_{1};
 
-  // Decrements the number of outstanding finishers. The last caller of this
-  // function should finish the asynchronous compilation, see the comment on
-  // {outstanding_finishers_}.
-  V8_WARN_UNUSED_RESULT bool DecrementAndCheckFinisherCount() {
-    return outstanding_finishers_.fetch_sub(1) == 1;
-  }
-
   // A reference to a pending foreground task, or {nullptr} if none is pending.
   CompileTask* pending_foreground_task_ = nullptr;
 
@@ -184,8 +257,10 @@ class AsyncCompileJob {
   // StreamingDecoder.
   std::shared_ptr<StreamingDecoder> stream_;
 
-  bool tiering_completed_ = false;
+  // The compilation id to identify trace events linked to this compilation.
+  const int compilation_id_;
 };
+
 }  // namespace wasm
 }  // namespace internal
 }  // namespace v8

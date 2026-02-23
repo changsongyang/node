@@ -1,14 +1,15 @@
 /*
- * Copyright 1998-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1998-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
 #include "internal/cryptlib.h"
-#include "bn_lcl.h"
+#include "internal/nelem.h"
+#include "bn_local.h"
 
 int BN_nnmod(BIGNUM *r, const BIGNUM *m, const BIGNUM *d, BN_CTX *ctx)
 {
@@ -17,16 +18,21 @@ int BN_nnmod(BIGNUM *r, const BIGNUM *m, const BIGNUM *d, BN_CTX *ctx)
      * always holds)
      */
 
+    if (r == d) {
+        ERR_raise(ERR_LIB_BN, ERR_R_PASSED_INVALID_ARGUMENT);
+        return 0;
+    }
+
     if (!(BN_mod(r, m, d, ctx)))
         return 0;
     if (!r->neg)
         return 1;
     /* now   -|d| < r < 0,  so we have to set  r := r + |d| */
-    return (d->neg ? BN_sub : BN_add) (r, r, d);
+    return (d->neg ? BN_sub : BN_add)(r, r, d);
 }
 
 int BN_mod_add(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
-               BN_CTX *ctx)
+    BN_CTX *ctx)
 {
     if (!BN_add(r, a, b))
         return 0;
@@ -46,7 +52,7 @@ int BN_mod_add(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
  * move depending on whether or not subtraction borrowed.
  */
 int bn_mod_add_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
-                         const BIGNUM *m)
+    const BIGNUM *m)
 {
     size_t i, ai, bi, mtop = m->top;
     BN_ULONG storage[1024 / BN_BITS2];
@@ -56,9 +62,11 @@ int bn_mod_add_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
     if (bn_wexpand(r, mtop) == NULL)
         return 0;
 
-    if (mtop > sizeof(storage) / sizeof(storage[0])
-        && (tp = OPENSSL_malloc(mtop * sizeof(BN_ULONG))) == NULL)
-	return 0;
+    if (mtop > OSSL_NELEM(storage)) {
+        tp = OPENSSL_malloc(mtop * sizeof(BN_ULONG));
+        if (tp == NULL)
+            return 0;
+    }
 
     ap = a->d != NULL ? a->d : tp;
     bp = b->d != NULL ? b->d : tp;
@@ -83,6 +91,7 @@ int bn_mod_add_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
         ((volatile BN_ULONG *)tp)[i] = 0;
     }
     r->top = mtop;
+    r->flags |= BN_FLG_FIXED_TOP;
     r->neg = 0;
 
     if (tp != storage)
@@ -92,7 +101,7 @@ int bn_mod_add_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
 }
 
 int BN_mod_add_quick(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
-                     const BIGNUM *m)
+    const BIGNUM *m)
 {
     int ret = bn_mod_add_fixed_top(r, a, b, m);
 
@@ -103,7 +112,7 @@ int BN_mod_add_quick(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
 }
 
 int BN_mod_sub(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
-               BN_CTX *ctx)
+    BN_CTX *ctx)
 {
     if (!BN_sub(r, a, b))
         return 0;
@@ -111,12 +120,81 @@ int BN_mod_sub(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
 }
 
 /*
+ * BN_mod_sub variant that may be used if both a and b are non-negative,
+ * a is less than m, while b is of same bit width as m. It's implemented
+ * as subtraction followed by two conditional additions.
+ *
+ * 0 <= a < m
+ * 0 <= b < 2^w < 2*m
+ *
+ * after subtraction
+ *
+ * -2*m < r = a - b < m
+ *
+ * Thus it takes up to two conditional additions to make |r| positive.
+ */
+int bn_mod_sub_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
+    const BIGNUM *m)
+{
+    size_t i, ai, bi, mtop = m->top;
+    BN_ULONG borrow, carry, ta, tb, mask, *rp;
+    const BN_ULONG *ap, *bp;
+
+    if (bn_wexpand(r, mtop) == NULL)
+        return 0;
+
+    rp = r->d;
+    ap = a->d != NULL ? a->d : rp;
+    bp = b->d != NULL ? b->d : rp;
+
+    for (i = 0, ai = 0, bi = 0, borrow = 0; i < mtop;) {
+        mask = (BN_ULONG)0 - ((i - a->top) >> (8 * sizeof(i) - 1));
+        ta = ap[ai] & mask;
+
+        mask = (BN_ULONG)0 - ((i - b->top) >> (8 * sizeof(i) - 1));
+        tb = bp[bi] & mask;
+        rp[i] = ta - tb - borrow;
+        if (ta != tb)
+            borrow = (ta < tb);
+
+        i++;
+        ai += (i - a->dmax) >> (8 * sizeof(i) - 1);
+        bi += (i - b->dmax) >> (8 * sizeof(i) - 1);
+    }
+    ap = m->d;
+    for (i = 0, mask = 0 - borrow, carry = 0; i < mtop; i++) {
+        ta = ((ap[i] & mask) + carry) & BN_MASK2;
+        carry = (ta < carry);
+        rp[i] = (rp[i] + ta) & BN_MASK2;
+        carry += (rp[i] < ta);
+    }
+    borrow -= carry;
+    for (i = 0, mask = 0 - borrow, carry = 0; i < mtop; i++) {
+        ta = ((ap[i] & mask) + carry) & BN_MASK2;
+        carry = (ta < carry);
+        rp[i] = (rp[i] + ta) & BN_MASK2;
+        carry += (rp[i] < ta);
+    }
+
+    r->top = mtop;
+    r->flags |= BN_FLG_FIXED_TOP;
+    r->neg = 0;
+
+    return 1;
+}
+
+/*
  * BN_mod_sub variant that may be used if both a and b are non-negative and
  * less than m
  */
 int BN_mod_sub_quick(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
-                     const BIGNUM *m)
+    const BIGNUM *m)
 {
+    if (r == m) {
+        ERR_raise(ERR_LIB_BN, ERR_R_PASSED_INVALID_ARGUMENT);
+        return 0;
+    }
+
     if (!BN_sub(r, a, b))
         return 0;
     if (r->neg)
@@ -126,7 +204,7 @@ int BN_mod_sub_quick(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
 
 /* slow but works */
 int BN_mod_mul(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
-               BN_CTX *ctx)
+    BN_CTX *ctx)
 {
     BIGNUM *t;
     int ret = 0;
@@ -149,9 +227,9 @@ int BN_mod_mul(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, const BIGNUM *m,
         goto err;
     bn_check_top(r);
     ret = 1;
- err:
+err:
     BN_CTX_end(ctx);
-    return (ret);
+    return ret;
 }
 
 int BN_mod_sqr(BIGNUM *r, const BIGNUM *a, const BIGNUM *m, BN_CTX *ctx)
@@ -185,7 +263,7 @@ int BN_mod_lshift1_quick(BIGNUM *r, const BIGNUM *a, const BIGNUM *m)
 }
 
 int BN_mod_lshift(BIGNUM *r, const BIGNUM *a, int n, const BIGNUM *m,
-                  BN_CTX *ctx)
+    BN_CTX *ctx)
 {
     BIGNUM *abs_m = NULL;
     int ret;
@@ -226,7 +304,7 @@ int BN_mod_lshift_quick(BIGNUM *r, const BIGNUM *a, int n, const BIGNUM *m)
         /* max_shift >= 0 */
 
         if (max_shift < 0) {
-            BNerr(BN_F_BN_MOD_LSHIFT_QUICK, BN_R_INPUT_NOT_REDUCED);
+            ERR_raise(ERR_LIB_BN, BN_R_INPUT_NOT_REDUCED);
             return 0;
         }
 

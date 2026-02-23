@@ -3,6 +3,7 @@
 .type	_aesni_ctr32_ghash_6x,@function
 .align	32
 _aesni_ctr32_ghash_6x:
+.cfi_startproc	
 	vmovdqu	32(%r11),%xmm2
 	subq	$6,%rdx
 	vpxor	%xmm4,%xmm4,%xmm4
@@ -31,23 +32,6 @@ _aesni_ctr32_ghash_6x:
 	vpxor	%xmm15,%xmm12,%xmm12
 	vmovups	16-128(%rcx),%xmm2
 	vpclmulqdq	$0x01,%xmm3,%xmm7,%xmm6
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	xorq	%r12,%r12
 	cmpq	%r14,%r15
 
@@ -327,25 +311,31 @@ _aesni_ctr32_ghash_6x:
 	vpxor	%xmm4,%xmm8,%xmm8
 
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	_aesni_ctr32_ghash_6x,.-_aesni_ctr32_ghash_6x
 .globl	aesni_gcm_decrypt
 .type	aesni_gcm_decrypt,@function
 .align	32
 aesni_gcm_decrypt:
+.cfi_startproc	
 	xorq	%r10,%r10
-
-
-
 	cmpq	$0x60,%rdx
 	jb	.Lgcm_dec_abort
 
 	leaq	(%rsp),%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 	vzeroupper
 
 	vmovdqu	(%r8),%xmm1
@@ -374,15 +364,7 @@ aesni_gcm_decrypt:
 	vmovdqu	80(%rdi),%xmm7
 	leaq	(%rdi),%r14
 	vmovdqu	64(%rdi),%xmm4
-
-
-
-
-
-
-
 	leaq	-192(%rdi,%rdx,1),%r15
-
 	vmovdqu	48(%rdi),%xmm5
 	shrq	$4,%rdx
 	xorq	%r10,%r10
@@ -415,19 +397,28 @@ aesni_gcm_decrypt:
 
 	vzeroupper
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lgcm_dec_abort:
 	movq	%r10,%rax
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_gcm_decrypt,.-aesni_gcm_decrypt
 .type	_aesni_ctr32_6x,@function
 .align	32
 _aesni_ctr32_6x:
+.cfi_startproc	
 	vmovdqu	0-128(%rcx),%xmm4
 	vmovdqu	32(%r11),%xmm2
 	leaq	-1(%rbp),%r13
@@ -514,27 +505,32 @@ _aesni_ctr32_6x:
 	vpshufb	%xmm0,%xmm1,%xmm1
 	vpxor	%xmm4,%xmm14,%xmm14
 	jmp	.Loop_ctr32
+.cfi_endproc	
 .size	_aesni_ctr32_6x,.-_aesni_ctr32_6x
 
 .globl	aesni_gcm_encrypt
 .type	aesni_gcm_encrypt,@function
 .align	32
 aesni_gcm_encrypt:
+.cfi_startproc	
 	xorq	%r10,%r10
-
-
-
-
 	cmpq	$288,%rdx
 	jb	.Lgcm_enc_abort
 
 	leaq	(%rsp),%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 	vzeroupper
 
 	vmovdqu	(%r8),%xmm1
@@ -558,16 +554,7 @@ aesni_gcm_encrypt:
 .Lenc_no_key_aliasing:
 
 	leaq	(%rsi),%r14
-
-
-
-
-
-
-
-
 	leaq	-192(%rsi,%rdx,1),%r15
-
 	shrq	$4,%rdx
 
 	call	_aesni_ctr32_6x
@@ -769,16 +756,25 @@ aesni_gcm_encrypt:
 
 	vzeroupper
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lgcm_enc_abort:
 	movq	%r10,%rax
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_gcm_encrypt,.-aesni_gcm_encrypt
+.section	.rodata
 .align	64
 .Lbswap_mask:
 .byte	15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0
@@ -791,4 +787,26 @@ aesni_gcm_encrypt:
 .Lone_lsb:
 .byte	1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 .byte	65,69,83,45,78,73,32,71,67,77,32,109,111,100,117,108,101,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
+.previous	
 .align	64
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

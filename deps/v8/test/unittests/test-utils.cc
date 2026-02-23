@@ -5,122 +5,75 @@
 #include "test/unittests/test-utils.h"
 
 #include "include/libplatform/libplatform.h"
-#include "include/v8.h"
-#include "src/api-inl.h"
+#include "include/v8-isolate.h"
+#include "src/api/api-inl.h"
 #include "src/base/platform/time.h"
-#include "src/flags.h"
-#include "src/isolate.h"
-#include "src/objects-inl.h"
-#include "src/v8.h"
+#include "src/execution/isolate.h"
+#include "src/flags/flags.h"
+#include "src/heap/cppgc-js/cpp-heap.h"
+#include "src/init/v8.h"
+#include "src/objects/objects-inl.h"
+#include "test/unittests/heap/heap-utils.h"
 
 namespace v8 {
 
-// static
-v8::ArrayBuffer::Allocator* TestWithIsolate::array_buffer_allocator_ = nullptr;
+namespace {
+// counter_lookup_callback doesn't pass through any state information about
+// the current Isolate, so we have to store the current counter map somewhere.
+// Fortunately tests run serially, so we can just store it in a static global.
+CounterMap* kCurrentCounterMap = nullptr;
+}  // namespace
 
-// static
-Isolate* TestWithIsolate::isolate_ = nullptr;
+std::unique_ptr<CppHeap> IsolateWrapper::cpp_heap_;
 
-TestWithIsolate::TestWithIsolate()
-    : isolate_scope_(isolate()), handle_scope_(isolate()) {}
+IsolateWrapper::IsolateWrapper(CountersMode counters_mode,
+                               bool use_statically_set_cpp_heap)
+    : array_buffer_allocator_(
+          v8::ArrayBuffer::Allocator::NewDefaultAllocator()) {
+  CHECK_NULL(kCurrentCounterMap);
 
-
-TestWithIsolate::~TestWithIsolate() {}
-
-
-// static
-void TestWithIsolate::SetUpTestCase() {
-  Test::SetUpTestCase();
-  EXPECT_EQ(NULL, isolate_);
-  // Make BigInt64Array / BigUint64Array available for testing.
-  i::FLAG_harmony_bigint = true;
   v8::Isolate::CreateParams create_params;
-  array_buffer_allocator_ = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
-  create_params.array_buffer_allocator = array_buffer_allocator_;
+  create_params.array_buffer_allocator = array_buffer_allocator_.get();
+  if (use_statically_set_cpp_heap) {
+    create_params.cpp_heap = cpp_heap_.release();
+  }
+
+  if (counters_mode == kEnableCounters) {
+    counter_map_ = std::make_unique<CounterMap>();
+    kCurrentCounterMap = counter_map_.get();
+
+    create_params.counter_lookup_callback = [](const char* name) {
+      CHECK_NOT_NULL(kCurrentCounterMap);
+      // If the name doesn't exist in the counter map, operator[] will default
+      // initialize it to zero.
+      return &(*kCurrentCounterMap)[name];
+    };
+  } else {
+    create_params.counter_lookup_callback = [](const char* name) -> int* {
+      return nullptr;
+    };
+  }
+
   isolate_ = v8::Isolate::New(create_params);
-  EXPECT_TRUE(isolate_ != NULL);
+  CHECK_NOT_NULL(isolate());
 }
 
-
-// static
-void TestWithIsolate::TearDownTestCase() {
-  ASSERT_TRUE(isolate_ != NULL);
+IsolateWrapper::~IsolateWrapper() {
   v8::Platform* platform = internal::V8::GetCurrentPlatform();
-  ASSERT_TRUE(platform != NULL);
-  while (platform::PumpMessageLoop(platform, isolate_)) continue;
+  CHECK_NOT_NULL(platform);
+  isolate_->Enter();
+  while (platform::PumpMessageLoop(platform, isolate())) continue;
+  isolate_->Exit();
   isolate_->Dispose();
-  isolate_ = NULL;
-  delete array_buffer_allocator_;
-  Test::TearDownTestCase();
-}
-
-Local<Value> TestWithIsolate::RunJS(const char* source) {
-  Local<Script> script =
-      v8::Script::Compile(
-          isolate()->GetCurrentContext(),
-          v8::String::NewFromUtf8(isolate(), source, v8::NewStringType::kNormal)
-              .ToLocalChecked())
-          .ToLocalChecked();
-  return script->Run(isolate()->GetCurrentContext()).ToLocalChecked();
-}
-
-TestWithContext::TestWithContext()
-    : context_(Context::New(isolate())), context_scope_(context_) {}
-
-TestWithContext::~TestWithContext() {}
-
-v8::Local<v8::String> TestWithContext::NewString(const char* string) {
-  return v8::String::NewFromUtf8(v8_isolate(), string,
-                                 v8::NewStringType::kNormal)
-      .ToLocalChecked();
-}
-
-void TestWithContext::SetGlobalProperty(const char* name,
-                                        v8::Local<v8::Value> value) {
-  CHECK(v8_context()
-            ->Global()
-            ->Set(v8_context(), NewString(name), value)
-            .FromJust());
+  if (counter_map_) {
+    CHECK_EQ(kCurrentCounterMap, counter_map_.get());
+    kCurrentCounterMap = nullptr;
+  } else {
+    CHECK_NULL(kCurrentCounterMap);
+  }
 }
 
 namespace internal {
-
-TestWithIsolate::~TestWithIsolate() {}
-
-TestWithIsolateAndZone::~TestWithIsolateAndZone() {}
-
-Factory* TestWithIsolate::factory() const { return isolate()->factory(); }
-
-Handle<Object> TestWithIsolate::RunJSInternal(const char* source) {
-  return Utils::OpenHandle(*::v8::TestWithIsolate::RunJS(source));
-}
-
-base::RandomNumberGenerator* TestWithIsolate::random_number_generator() const {
-  return isolate()->random_number_generator();
-}
-
-TestWithZone::~TestWithZone() {}
-
-TestWithNativeContext::~TestWithNativeContext() {}
-
-Handle<Context> TestWithNativeContext::native_context() const {
-  return isolate()->native_context();
-}
-
-SaveFlags::SaveFlags() { non_default_flags_ = FlagList::argv(); }
-
-SaveFlags::~SaveFlags() {
-  FlagList::ResetAllFlags();
-  int argc = static_cast<int>(non_default_flags_->size());
-  FlagList::SetFlagsFromCommandLine(
-      &argc, const_cast<char**>(non_default_flags_->data()),
-      false /* remove_flags */);
-  for (auto flag = non_default_flags_->begin();
-       flag != non_default_flags_->end(); ++flag) {
-    delete[] * flag;
-  }
-  delete non_default_flags_;
-}
 
 }  // namespace internal
 }  // namespace v8

@@ -20,20 +20,30 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
+
 const common = require('../common');
-const assert = require('assert');
 
-const zlib = require('zlib');
-const gz = zlib.Gzip();
-const emptyBuffer = Buffer.alloc(0);
-let received = 0;
-gz.on('data', function(c) {
-  received += c.length;
-});
+const assert = require('node:assert');
+const zlib = require('node:zlib');
 
-gz.on('end', common.mustCall(function() {
-  assert.strictEqual(received, 20);
-}));
-gz.on('finish', common.mustCall());
-gz.write(emptyBuffer);
-gz.end();
+const compressors = [
+  [zlib.Gzip, 20],
+  [zlib.BrotliCompress, 1],
+  [zlib.ZstdCompress, 9],
+];
+
+for (const [Compressor, expected] of compressors) {
+  const gz = new Compressor();
+  const emptyBuffer = Buffer.alloc(0);
+  let received = 0;
+  gz.on('data', function(c) {
+    received += c.length;
+  });
+  gz.on('error', common.mustNotCall());
+  gz.on('end', common.mustCall(() => {
+    assert.strictEqual(received, expected,
+                       `${received}, ${expected}, ${Compressor.name}`);
+  }));
+  gz.write(emptyBuffer);
+  gz.end();
+}

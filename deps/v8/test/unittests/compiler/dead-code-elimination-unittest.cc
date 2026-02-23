@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/compiler/common-operator.h"
 #include "src/compiler/dead-code-elimination.h"
+
+#include "src/compiler/common-operator.h"
 #include "test/unittests/compiler/graph-reducer-unittest.h"
 #include "test/unittests/compiler/graph-unittest.h"
 #include "test/unittests/compiler/node-test-utils.h"
-#include "testing/gmock-support.h"
 
 using testing::StrictMock;
 
@@ -20,7 +20,7 @@ class DeadCodeEliminationTest : public GraphTest {
  public:
   explicit DeadCodeEliminationTest(int num_parameters = 4)
       : GraphTest(num_parameters) {}
-  ~DeadCodeEliminationTest() override {}
+  ~DeadCodeEliminationTest() override = default;
 
  protected:
   Reduction Reduce(AdvancedReducer::Editor* editor, Node* node) {

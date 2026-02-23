@@ -19,16 +19,19 @@ let stage = -1;
 const QUEUE = 10;
 
 const errObj = {
-  type: Error,
+  name: 'Error',
   message: 'setImmediate Err'
 };
 
-process.once('uncaughtException', common.expectsError(errObj));
-process.once('uncaughtException', () => assert.strictEqual(stage, 0));
+process.once('uncaughtException', common.mustCall((err, errorOrigin) => {
+  assert.strictEqual(errorOrigin, 'uncaughtException');
+  assert.strictEqual(stage, 0);
+  common.expectsError(errObj)(err);
+}));
 
 const d1 = domain.create();
 d1.once('error', common.expectsError(errObj));
-d1.once('error', () => assert.strictEqual(stage, 0));
+d1.once('error', common.mustCall(() => assert.strictEqual(stage, 0)));
 
 const run = common.mustCall((callStage) => {
   assert(callStage >= stage);

@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function toByteArray(s) {
   var arr = [];
@@ -52,7 +49,7 @@ function checkImportsAndExports(imported_module_name, imported_function_name,
     .addBody([kExprCallFunction, 0])
     .exportAs(exported_function_name);
 
-  // sanity check: does javascript agree with out shouldThrow annotation?
+  // Consistency check: does javascript agree with our shouldThrow annotation?
   assertEquals(shouldThrow,
       !isValidUtf8(imported_module_name) ||
           !isValidUtf8(imported_function_name) ||

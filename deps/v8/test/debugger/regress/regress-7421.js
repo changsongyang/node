@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --block-concurrent-recompilation
-
 Debug = debug.Debug
 
 // Test that the side-effect check is not bypassed in optimized code.
@@ -20,9 +18,11 @@ function wrapper1() {
     // Get this function optimized before calling to increment.
     // Check that that call performs the necessary side-effect checks.
     %OptimizeOsr();
+    %PrepareFunctionForOptimization(wrapper1);
   }
   f1();
 }
+%PrepareFunctionForOptimization(wrapper1);
 
 function f2() {
   counter++;
@@ -47,18 +47,21 @@ function listener(event, exec_state, event_data, data) {
     wrapper1();
     fail("wrapper1()");
 
+    %PrepareFunctionForOptimization(wrapper2);
     wrapper2(true);
     wrapper2(false);
     wrapper2(true);
     %OptimizeFunctionOnNextCall(wrapper2);
     wrapper2(false);
     fail("wrapper2(true)");
-    fail("%OptimizeFunctionOnNextCall(wrapper2); wrapper2(true)");
+    fail("%PrepareFunctionForOptimization(wrapper2); "+
+         "%OptimizeFunctionOnNextCall(wrapper2); wrapper2(true)");
 
+    %PrepareFunctionForOptimization(wrapper2);
+    %DisableOptimizationFinalization();
     %OptimizeFunctionOnNextCall(wrapper2, "concurrent");
     wrapper2(false);
-    fail("%UnblockConcurrentRecompilation();" +
-         "%GetOptimizationStatus(wrapper2, 'sync');" +
+    fail("%FinalizeOptimization();" +
          "wrapper2(true);");
   } catch (e) {
     exception = e;

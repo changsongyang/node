@@ -32,7 +32,7 @@ const asyncReadable = new Readable({
 });
 
 asyncReadable.on('readable', common.mustCall(() => {
-  if (asyncReadable.read() !== null) {
+  if (asyncReadable.read(asyncReadable.readableLength) !== null) {
     // After each read(), the buffer is empty.
     // If the stream doesn't end now,
     // then we need to notify the reader on future changes.
@@ -74,12 +74,14 @@ const slowProducer = new Readable({
 });
 
 slowProducer.on('readable', common.mustCall(() => {
-  if (slowProducer.read(8) === null) {
+  const chunk = slowProducer.read(8);
+  const state = slowProducer._readableState;
+  if (chunk === null) {
     // The buffer doesn't have enough data, and the stream is not need,
     // we need to notify the reader when data arrives.
-    assert.strictEqual(slowProducer._readableState.needReadable, true);
+    assert.strictEqual(state.needReadable, true);
   } else {
-    assert.strictEqual(slowProducer._readableState.needReadable, false);
+    assert.strictEqual(state.needReadable, false);
   }
 }, 4));
 

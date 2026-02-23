@@ -125,9 +125,6 @@ assertEquals("abci\u0307", "aBcI\u0307".toLowerCase());
 // Anything other than 'tr' and 'az' behave like root for U+0307.
 assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("fil"));
 assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("zh-Hant-TW"));
-assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("i-klingon"));
-assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("i-enochian"));
-assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("x-foobar"));
 
 // Up to 8 chars are allowed for the primary language tag in BCP 47.
 assertEquals("abci\u0307", "aBcI\u0307".toLocaleLowerCase("longlang"));
@@ -149,13 +146,13 @@ assertEquals("Α", "α\u0301".toLocaleUpperCase("el-Grek"));
 assertEquals("Α", "α\u0301".toLocaleUpperCase("el-Grek-GR"));
 assertEquals("Α", "ά".toLocaleUpperCase("el"));
 assertEquals("ΑΟΫΩ", "άόύώ".toLocaleUpperCase("el"));
-assertEquals("ΑΟΫΩ", "α\u0301ο\u0301υ\u0301ω\u0301".toLocaleUpperCase("el"));
+assertEquals("ΑΟΥ\u0308Ω", "α\u0301ο\u0301υ\u0301ω\u0301".toLocaleUpperCase("el"));
 assertEquals("ΑΟΫΩ", "άόύώ".toLocaleUpperCase("el"));
 assertEquals("ΟΕ", "Ό\u1f15".toLocaleUpperCase("el"));
 assertEquals("ΟΕ", "Ο\u0301ε\u0314\u0301".toLocaleUpperCase("el"));
 assertEquals("ΡΩΜΕΪΚΑ", "ρωμέικα".toLocaleUpperCase("el"));
 assertEquals("ΜΑΪΟΥ, ΤΡΟΛΕΪ", "Μαΐου, τρόλεϊ".toLocaleUpperCase("el"));
-assertEquals("ΤΟ ΕΝΑ Ή ΤΟ ΑΛΛΟ.", "Το ένα ή το άλλο.".toLocaleUpperCase("el"));
+assertEquals("ΤΟ ΕΝΑ Ή ΤΟ ΑΛΛΟ.", "Το ένα ή το άλλο.".toLocaleUpperCase("el"));
 
 // Input and output are identical.
 assertEquals("αβγδε", "αβγδε".toLocaleLowerCase("el"));

@@ -14,6 +14,7 @@
 #include "unicode/uscript.h"
 #include "unicode/uset.h"
 #include "cmemory.h"
+#include "emojiprops.h"
 #include "mutex.h"
 #include "normalizer2impl.h"
 #include "uassert.h"
@@ -23,6 +24,11 @@
 #include "umutex.h"
 #include "uprops.h"
 
+using icu::LocalPointer;
+#if !UCONFIG_NO_NORMALIZATION
+using icu::Normalizer2Factory;
+using icu::Normalizer2Impl;
+#endif
 using icu::UInitOnce;
 using icu::UnicodeSet;
 
@@ -30,17 +36,19 @@ namespace {
 
 UBool U_CALLCONV characterproperties_cleanup();
 
+constexpr int32_t NUM_INCLUSIONS = UPROPS_SRC_COUNT + (UCHAR_INT_LIMIT - UCHAR_INT_START);
+
 struct Inclusion {
-    UnicodeSet  *fSet;
-    UInitOnce    fInitOnce;
+    UnicodeSet  *fSet = nullptr;
+    UInitOnce    fInitOnce {};
 };
-Inclusion gInclusions[UPROPS_SRC_COUNT]; // cached getInclusions()
+Inclusion gInclusions[NUM_INCLUSIONS]; // cached getInclusions()
 
 UnicodeSet *sets[UCHAR_BINARY_LIMIT] = {};
 
 UCPMap *maps[UCHAR_INT_LIMIT - UCHAR_INT_START] = {};
 
-UMutex cpMutex = U_MUTEX_INITIALIZER;
+icu::UMutex cpMutex;
 
 //----------------------------------------------------------------
 // Inclusions list
@@ -50,17 +58,17 @@ UMutex cpMutex = U_MUTEX_INITIALIZER;
 // Does not use uset.h to reduce code dependencies
 void U_CALLCONV
 _set_add(USet *set, UChar32 c) {
-    ((UnicodeSet *)set)->add(c);
+    reinterpret_cast<UnicodeSet*>(set)->add(c);
 }
 
 void U_CALLCONV
 _set_addRange(USet *set, UChar32 start, UChar32 end) {
-    ((UnicodeSet *)set)->add(start, end);
+    reinterpret_cast<UnicodeSet*>(set)->add(start, end);
 }
 
 void U_CALLCONV
-_set_addString(USet *set, const UChar *str, int32_t length) {
-    ((UnicodeSet *)set)->add(icu::UnicodeString((UBool)(length<0), str, length));
+_set_addString(USet *set, const char16_t *str, int32_t length) {
+    reinterpret_cast<UnicodeSet*>(set)->add(icu::UnicodeString(static_cast<UBool>(length < 0), str, length));
 }
 
 UBool U_CALLCONV characterproperties_cleanup() {
@@ -77,38 +85,25 @@ UBool U_CALLCONV characterproperties_cleanup() {
         ucptrie_close(reinterpret_cast<UCPTrie *>(maps[i]));
         maps[i] = nullptr;
     }
-    return TRUE;
+    return true;
 }
 
-}  // namespace
-
-U_NAMESPACE_BEGIN
-
-/*
-Reduce excessive reallocation, and make it easier to detect initialization problems.
-Usually you don't see smaller sets than this for Unicode 5.0.
-*/
-constexpr int32_t DEFAULT_INCLUSION_CAPACITY = 3072;
-
-void U_CALLCONV CharacterProperties::initInclusion(UPropertySource src, UErrorCode &errorCode) {
+void U_CALLCONV initInclusion(UPropertySource src, UErrorCode &errorCode) {
     // This function is invoked only via umtx_initOnce().
-    // This function is a friend of class UnicodeSet.
-
     U_ASSERT(0 <= src && src < UPROPS_SRC_COUNT);
     if (src == UPROPS_SRC_NONE) {
         errorCode = U_INTERNAL_PROGRAM_ERROR;
         return;
     }
-    UnicodeSet * &incl = gInclusions[src].fSet;
-    U_ASSERT(incl == nullptr);
+    U_ASSERT(gInclusions[src].fSet == nullptr);
 
-    incl = new UnicodeSet();
-    if (incl == nullptr) {
+    LocalPointer<UnicodeSet> incl(new UnicodeSet());
+    if (incl.isNull()) {
         errorCode = U_MEMORY_ALLOCATION_ERROR;
         return;
     }
     USetAdder sa = {
-        (USet *)incl,
+        reinterpret_cast<USet*>(incl.getAlias()),
         _set_add,
         _set_addRange,
         _set_addString,
@@ -116,7 +111,6 @@ void U_CALLCONV CharacterProperties::initInclusion(UPropertySource src, UErrorCo
         nullptr // don't need removeRange()
     };
 
-    incl->ensureCapacity(DEFAULT_INCLUSION_CAPACITY, errorCode);
     switch(src) {
     case UPROPS_SRC_CHAR:
         uchar_addPropertyStarts(&sa, &errorCode);
@@ -175,7 +169,26 @@ void U_CALLCONV CharacterProperties::initInclusion(UPropertySource src, UErrorCo
     case UPROPS_SRC_INPC:
     case UPROPS_SRC_INSC:
     case UPROPS_SRC_VO:
-        uprops_addPropertyStarts((UPropertySource)src, &sa, &errorCode);
+        uprops_addPropertyStarts(src, &sa, &errorCode);
+        break;
+    case UPROPS_SRC_EMOJI: {
+        const icu::EmojiProps *ep = icu::EmojiProps::getSingleton(errorCode);
+        if (U_SUCCESS(errorCode)) {
+            ep->addPropertyStarts(&sa, errorCode);
+        }
+        break;
+    }
+    case UPROPS_SRC_IDSU:
+        // New in Unicode 15.1 for just two characters.
+        sa.add(sa.set, 0x2FFE);
+        sa.add(sa.set, 0x2FFF + 1);
+        break;
+    case UPROPS_SRC_ID_COMPAT_MATH:
+    case UPROPS_SRC_MCM:
+        uprops_addPropertyStarts(src, &sa, &errorCode);
+        break;
+    case UPROPS_SRC_BLOCK:
+        ublock_addPropertyStarts(&sa, errorCode);
         break;
     default:
         errorCode = U_INTERNAL_PROGRAM_ERROR;
@@ -183,12 +196,15 @@ void U_CALLCONV CharacterProperties::initInclusion(UPropertySource src, UErrorCo
     }
 
     if (U_FAILURE(errorCode)) {
-        delete incl;
-        incl = nullptr;
         return;
     }
-    // Compact for caching
+    if (incl->isBogus()) {
+        errorCode = U_MEMORY_ALLOCATION_ERROR;
+        return;
+    }
+    // Compact for caching.
     incl->compact();
+    gInclusions[src].fSet = incl.orphan();
     ucln_common_registerCleanup(UCLN_COMMON_CHARACTERPROPERTIES, characterproperties_cleanup);
 }
 
@@ -199,15 +215,66 @@ const UnicodeSet *getInclusionsForSource(UPropertySource src, UErrorCode &errorC
         return nullptr;
     }
     Inclusion &i = gInclusions[src];
-    umtx_initOnce(i.fInitOnce, &CharacterProperties::initInclusion, src, errorCode);
+    umtx_initOnce(i.fInitOnce, &initInclusion, src, errorCode);
     return i.fSet;
 }
+
+void U_CALLCONV initIntPropInclusion(UProperty prop, UErrorCode &errorCode) {
+    // This function is invoked only via umtx_initOnce().
+    U_ASSERT(UCHAR_INT_START <= prop && prop < UCHAR_INT_LIMIT);
+    int32_t inclIndex = UPROPS_SRC_COUNT + (prop - UCHAR_INT_START);
+    U_ASSERT(gInclusions[inclIndex].fSet == nullptr);
+    UPropertySource src = uprops_getSource(prop);
+    const UnicodeSet *incl = getInclusionsForSource(src, errorCode);
+    if (U_FAILURE(errorCode)) {
+        return;
+    }
+
+    LocalPointer<UnicodeSet> intPropIncl(new UnicodeSet(0, 0));
+    if (intPropIncl.isNull()) {
+        errorCode = U_MEMORY_ALLOCATION_ERROR;
+        return;
+    }
+    int32_t numRanges = incl->getRangeCount();
+    int32_t prevValue = 0;
+    for (int32_t i = 0; i < numRanges; ++i) {
+        UChar32 rangeEnd = incl->getRangeEnd(i);
+        for (UChar32 c = incl->getRangeStart(i); c <= rangeEnd; ++c) {
+            // TODO: Get a UCharacterProperty.IntProperty to avoid the property dispatch.
+            int32_t value = u_getIntPropertyValue(c, prop);
+            if (value != prevValue) {
+                intPropIncl->add(c);
+                prevValue = value;
+            }
+        }
+    }
+
+    if (intPropIncl->isBogus()) {
+        errorCode = U_MEMORY_ALLOCATION_ERROR;
+        return;
+    }
+    // Compact for caching.
+    intPropIncl->compact();
+    gInclusions[inclIndex].fSet = intPropIncl.orphan();
+    ucln_common_registerCleanup(UCLN_COMMON_CHARACTERPROPERTIES, characterproperties_cleanup);
+}
+
+}  // namespace
+
+U_NAMESPACE_BEGIN
 
 const UnicodeSet *CharacterProperties::getInclusionsForProperty(
         UProperty prop, UErrorCode &errorCode) {
     if (U_FAILURE(errorCode)) { return nullptr; }
-    UPropertySource src = uprops_getSource(prop);
-    return getInclusionsForSource(src, errorCode);
+    if (UCHAR_INT_START <= prop && prop < UCHAR_INT_LIMIT) {
+        int32_t inclIndex = UPROPS_SRC_COUNT + (prop - UCHAR_INT_START);
+        Inclusion &i = gInclusions[inclIndex];
+        umtx_initOnce(i.fInitOnce, &initIntPropInclusion, prop, errorCode);
+        return i.fSet;
+    } else {
+        UPropertySource src = uprops_getSource(prop);
+        return getInclusionsForSource(src, errorCode);
+    }
 }
 
 U_NAMESPACE_END
@@ -216,11 +283,31 @@ namespace {
 
 UnicodeSet *makeSet(UProperty property, UErrorCode &errorCode) {
     if (U_FAILURE(errorCode)) { return nullptr; }
-    icu::LocalPointer<UnicodeSet> set(new UnicodeSet());
+    LocalPointer<UnicodeSet> set(new UnicodeSet());
     if (set.isNull()) {
         errorCode = U_MEMORY_ALLOCATION_ERROR;
         return nullptr;
     }
+    if (UCHAR_BASIC_EMOJI <= property && property <= UCHAR_RGI_EMOJI) {
+        // property of strings
+        const icu::EmojiProps *ep = icu::EmojiProps::getSingleton(errorCode);
+        if (U_FAILURE(errorCode)) { return nullptr; }
+        USetAdder sa = {
+            reinterpret_cast<USet*>(set.getAlias()),
+            _set_add,
+            _set_addRange,
+            _set_addString,
+            nullptr, // don't need remove()
+            nullptr // don't need removeRange()
+        };
+        ep->addStrings(&sa, property, errorCode);
+        if (property != UCHAR_BASIC_EMOJI && property != UCHAR_RGI_EMOJI) {
+            // property of _only_ strings
+            set->freeze();
+            return set.orphan();
+        }
+    }
+
     const UnicodeSet *inclusions =
         icu::CharacterProperties::getInclusionsForProperty(property, errorCode);
     if (U_FAILURE(errorCode)) { return nullptr; }
@@ -302,22 +389,30 @@ UCPMap *makeMap(UProperty property, UErrorCode &errorCode) {
 
 }  // namespace
 
-U_NAMESPACE_USE
+U_NAMESPACE_BEGIN
 
-U_CAPI const USet * U_EXPORT2
-u_getBinaryPropertySet(UProperty property, UErrorCode *pErrorCode) {
-    if (U_FAILURE(*pErrorCode)) { return nullptr; }
+const UnicodeSet *CharacterProperties::getBinaryPropertySet(UProperty property, UErrorCode &errorCode) {
+    if (U_FAILURE(errorCode)) { return nullptr; }
     if (property < 0 || UCHAR_BINARY_LIMIT <= property) {
-        *pErrorCode = U_ILLEGAL_ARGUMENT_ERROR;
+        errorCode = U_ILLEGAL_ARGUMENT_ERROR;
         return nullptr;
     }
     Mutex m(&cpMutex);
     UnicodeSet *set = sets[property];
     if (set == nullptr) {
-        sets[property] = set = makeSet(property, *pErrorCode);
+        sets[property] = set = makeSet(property, errorCode);
     }
-    if (U_FAILURE(*pErrorCode)) { return nullptr; }
-    return set->toUSet();
+    return set;
+}
+
+U_NAMESPACE_END
+
+U_NAMESPACE_USE
+
+U_CAPI const USet * U_EXPORT2
+u_getBinaryPropertySet(UProperty property, UErrorCode *pErrorCode) {
+    const UnicodeSet *set = CharacterProperties::getBinaryPropertySet(property, *pErrorCode);
+    return U_SUCCESS(*pErrorCode) ? set->toUSet() : nullptr;
 }
 
 U_CAPI const UCPMap * U_EXPORT2

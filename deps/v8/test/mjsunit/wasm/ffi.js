@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm --allow-natives-syntax
+// Flags: --allow-natives-syntax
 
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 function testCallFFI(func, check) {
   var builder = new WasmModuleBuilder();
@@ -14,8 +13,8 @@ function testCallFFI(func, check) {
   builder.addImport("", "func", sig_index);
   builder.addFunction("main", sig_index)
     .addBody([
-      kExprGetLocal, 0,            // --
-      kExprGetLocal, 1,            // --
+      kExprLocalGet, 0,            // --
+      kExprLocalGet, 1,            // --
       kExprCallFunction, 0  // --
     ])        // --
     .exportFunc();
@@ -77,8 +76,8 @@ testCallFFI(bind_sub, check_FOREIGN_SUB);
   builder.addImport("", "func", sig_index);
   builder.addFunction("main", sig_index)
     .addBody([
-      kExprGetLocal, 0,            // --
-      kExprGetLocal, 1,            // --
+      kExprLocalGet, 0,            // --
+      kExprLocalGet, 1,            // --
       kExprCallFunction, 0  // --
     ])        // --
     .exportFunc();
@@ -126,7 +125,9 @@ testCallFFI(bind_sub, check_FOREIGN_SUB);
 })();
 
 print("Callable JSObject");
-testCallFFI(%GetCallable(), function check(r, a, b) {assertEquals(a - b, r);});
+function callable_target(a, b) { return a - b; }
+let callable_obj = %GetCallable("callable_target");
+testCallFFI(callable_obj, function check(r, a, b) {assertEquals(a - b, r);});
 
 function FOREIGN_ABCD(a, b, c, d) {
 //  print("FOREIGN_ABCD(" + a + ", " + b + ", " + c + ", " + d + ")");
@@ -260,8 +261,8 @@ function testCallBinopVoid(type, func, check) {
   builder.addImport("", "func", makeSig_v_xx(type));
   builder.addFunction("main", makeSig_r_xx(kWasmI32, type))
     .addBody([
-      kExprGetLocal, 0,            // --
-      kExprGetLocal, 1,            // --
+      kExprLocalGet, 0,            // --
+      kExprLocalGet, 1,            // --
       kExprCallFunction, 0,        // --
       kExprI32Const, 33            // --
     ])                             // --
@@ -317,7 +318,7 @@ testCallBinopVoid(kWasmF64);
     .addBody([
       kExprI32Const, 37,     // --
       kExprCallFunction, 0,  // --
-      kExprGetLocal, 0,      // --
+      kExprLocalGet, 0,      // --
       kExprCallFunction, 1   // --
     ])                       // --
     .exportFunc()

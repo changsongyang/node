@@ -24,15 +24,20 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Tests of profiles generator and utilities.
 
 #ifndef V8_TEST_CCTEST_PROFILER_EXTENSION_H_
 #define V8_TEST_CCTEST_PROFILER_EXTENSION_H_
 
+// Tests of profiles generator and utilities.
+
+#include "include/v8-extension.h"
 #include "include/v8-profiler.h"
 
 namespace v8 {
+
+template <typename T>
+class FunctionCallbackInfo;
+
 namespace internal {
 
 class CpuProfiler;
@@ -41,8 +46,8 @@ class ProfilerExtension : public v8::Extension {
  public:
   ProfilerExtension() : v8::Extension("v8/profiler", kSource) { }
 
-  virtual v8::Local<v8::FunctionTemplate> GetNativeFunctionTemplate(
-      v8::Isolate* isolate, v8::Local<v8::String> name);
+  v8::Local<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate* isolate, v8::Local<v8::String> name) override;
 
   static void set_profiler(v8::CpuProfiler* profiler) { profiler_ = profiler; }
   static void set_profiler(CpuProfiler* profiler) {
@@ -52,9 +57,9 @@ class ProfilerExtension : public v8::Extension {
   static v8::CpuProfile* last_profile;
 
  private:
-  static void StartProfiling(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void StopProfiling(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void CollectSample(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void StartProfiling(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void StopProfiling(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void CollectSample(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   static v8::CpuProfiler* profiler_;
   static const char* kSource;

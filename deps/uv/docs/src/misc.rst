@@ -46,6 +46,12 @@ Data types
         Replacement function for :man:`free(3)`.
         See :c:func:`uv_replace_allocator`.
 
+.. c:type::  void (*uv_random_cb)(uv_random_t* req, int status, void* buf, size_t buflen)
+
+    Callback passed to :c:func:`uv_random`. `status` is non-zero in case of
+    error. The `buf` pointer is the same pointer that was passed to
+    :c:func:`uv_random`.
+
 .. c:type:: uv_file
 
     Cross platform representation of a file handle.
@@ -64,6 +70,51 @@ Data types
     Cross platform representation of a `pid_t`.
 
     .. versionadded:: 1.16.0
+
+.. c:type:: uv_timeval_t
+
+    Y2K38-unsafe data type for storing times with microsecond resolution.
+    Will be replaced with :c:type:`uv_timeval64_t` in libuv v2.0.
+
+    ::
+
+        typedef struct {
+            long tv_sec;
+            long tv_usec;
+        } uv_timeval_t;
+
+.. c:type:: uv_timeval64_t
+
+    Y2K38-safe data type for storing times with microsecond resolution.
+
+    ::
+
+        typedef struct {
+            int64_t tv_sec;
+            int32_t tv_usec;
+        } uv_timeval64_t;
+
+.. c:type:: uv_timespec64_t
+
+    Y2K38-safe data type for storing times with nanosecond resolution.
+
+    ::
+
+        typedef struct {
+            int64_t tv_sec;
+            int32_t tv_nsec;
+        } uv_timespec64_t;
+
+.. c:enum:: uv_clock_id
+
+    Clock source for :c:func:`uv_clock_gettime`.
+
+    ::
+
+        typedef enum {
+          UV_CLOCK_MONOTONIC,
+          UV_CLOCK_REALTIME
+        } uv_clock_id;
 
 .. c:type:: uv_rusage_t
 
@@ -91,7 +142,10 @@ Data types
         } uv_rusage_t;
 
     Members marked with `(X)` are unsupported on Windows.
-    See :man:`getrusage(2)` for supported fields on Unix
+    See :man:`getrusage(2)` for supported fields on UNIX-like platforms.
+
+    The maximum resident set size is reported in kilobytes, the unit most
+    platforms use natively.
 
 .. c:type:: uv_cpu_info_t
 
@@ -103,11 +157,11 @@ Data types
             char* model;
             int speed;
             struct uv_cpu_times_s {
-                uint64_t user;
-                uint64_t nice;
-                uint64_t sys;
-                uint64_t idle;
-                uint64_t irq;
+                uint64_t user; /* milliseconds */
+                uint64_t nice; /* milliseconds */
+                uint64_t sys; /* milliseconds */
+                uint64_t idle; /* milliseconds */
+                uint64_t irq; /* milliseconds */
             } cpu_times;
         } uv_cpu_info_t;
 
@@ -145,6 +199,45 @@ Data types
             char* homedir;
         } uv_passwd_t;
 
+.. c:type:: uv_group_t
+
+    Data type for group file information.
+
+    ::
+
+        typedef struct uv_group_s {
+          char* groupname;
+          unsigned long gid;
+          char** members;
+        } uv_group_t;
+
+.. c:type:: uv_utsname_t
+
+    Data type for operating system name and version information.
+
+    ::
+
+        typedef struct uv_utsname_s {
+            char sysname[256];
+            char release[256];
+            char version[256];
+            char machine[256];
+        } uv_utsname_t;
+
+.. c:type:: uv_env_item_t
+
+    Data type for environment variable storage.
+
+    ::
+
+        typedef struct uv_env_item_s {
+            char* name;
+            char* value;
+        } uv_env_item_t;
+
+.. c:type:: uv_random_t
+
+    Random data request type.
 
 API
 ---
@@ -156,7 +249,7 @@ API
     type of the stdio streams.
 
     For :man:`isatty(3)` equivalent functionality use this function and test
-    for ``UV_TTY``.
+    for `UV_TTY`.
 
 .. c:function:: int uv_replace_allocator(uv_malloc_func malloc_func, uv_realloc_func realloc_func, uv_calloc_func calloc_func, uv_free_func free_func)
 
@@ -170,13 +263,31 @@ API
     after all resources have been freed and thus libuv doesn't reference
     any allocated memory chunk.
 
-    On success, it returns 0, if any of the function pointers is NULL it
-    returns UV_EINVAL.
+    On success, it returns 0, if any of the function pointers is `NULL` it
+    returns `UV_EINVAL`.
 
     .. warning:: There is no protection against changing the allocator multiple
                  times. If the user changes it they are responsible for making
                  sure the allocator is changed while no memory was allocated with
                  the previous allocator, or that they are compatible.
+
+    .. warning:: Allocator must be thread-safe.
+
+.. c:function:: void uv_library_shutdown(void);
+
+    .. versionadded:: 1.38.0
+
+    Release any global state that libuv is holding onto. Libuv will normally
+    do so automatically when it is unloaded but it can be instructed to perform
+    cleanup manually.
+
+    .. warning:: Only call :c:func:`uv_library_shutdown()` once.
+
+    .. warning:: Don't call :c:func:`uv_library_shutdown()` when there are
+                 still event loops or I/O requests active.
+
+    .. warning:: Don't call libuv functions after calling
+                 :c:func:`uv_library_shutdown()`.
 
 .. c:function:: uv_buf_t uv_buf_init(char* base, unsigned int len)
 
@@ -188,26 +299,50 @@ API
 
 .. c:function:: char** uv_setup_args(int argc, char** argv)
 
-    Store the program arguments. Required for getting / setting the process title.
+    Store the program arguments. Required for getting / setting the process title
+    or the executable path. Libuv may take ownership of the memory that `argv` 
+    points to. This function should be called exactly once, at program start-up.
+
+    Example:
+
+    ::
+
+        argv = uv_setup_args(argc, argv);  /* May return a copy of argv. */
+
 
 .. c:function:: int uv_get_process_title(char* buffer, size_t size)
 
     Gets the title of the current process. You *must* call `uv_setup_args`
-    before calling this function. If `buffer` is `NULL` or `size` is zero,
-    `UV_EINVAL` is returned. If `size` cannot accommodate the process title and
-    terminating `NULL` character, the function returns `UV_ENOBUFS`.
+    before calling this function on Unix and AIX systems. If `uv_setup_args`
+    has not been called on systems that require it, then `UV_ENOBUFS` is
+    returned. If `buffer` is `NULL` or `size` is zero, `UV_EINVAL` is returned.
+    If `size` cannot accommodate the process title and terminating `nul`
+    character, the function returns `UV_ENOBUFS`.
+
+    .. note::
+        On BSD systems, `uv_setup_args` is needed for getting the initial process
+        title. The process title returned will be an empty string until either
+        `uv_setup_args` or `uv_set_process_title` is called.
 
     .. versionchanged:: 1.18.1 now thread-safe on all supported platforms.
+
+    .. versionchanged:: 1.39.0 now returns an error if `uv_setup_args` is needed
+                        but hasn't been called.
 
 .. c:function:: int uv_set_process_title(const char* title)
 
     Sets the current process title. You *must* call `uv_setup_args` before
-    calling this function. On platforms with a fixed size buffer for the process
-    title the contents of `title` will be copied to the buffer and truncated if
-    larger than the available space. Other platforms will return `UV_ENOMEM` if
-    they cannot allocate enough space to duplicate the contents of `title`.
+    calling this function on Unix and AIX systems. If `uv_setup_args` has not
+    been called on systems that require it, then `UV_ENOBUFS` is returned. On
+    platforms with a fixed size buffer for the process title the contents of
+    `title` will be copied to the buffer and truncated if larger than the
+    available space. Other platforms will return `UV_ENOMEM` if they cannot
+    allocate enough space to duplicate the contents of `title`.
 
     .. versionchanged:: 1.18.1 now thread-safe on all supported platforms.
+
+    .. versionchanged:: 1.39.0 now returns an error if `uv_setup_args` is needed
+                        but hasn't been called.
 
 .. c:function:: int uv_resident_set_memory(size_t* rss)
 
@@ -215,7 +350,7 @@ API
 
 .. c:function:: int uv_uptime(double* uptime)
 
-    Gets the current system uptime.
+    Gets the current system uptime. Depending on the system full or fractional seconds are returned.
 
 .. c:function:: int uv_getrusage(uv_rusage_t* rusage)
 
@@ -223,6 +358,17 @@ API
 
     .. note::
         On Windows not all fields are set, the unsupported fields are filled with zeroes.
+        See :c:type:`uv_rusage_t` for more details.
+
+.. c:function:: int uv_getrusage_thread(uv_rusage_t* rusage)
+
+    Gets the resource usage measures for the calling thread.
+
+    .. versionadded:: 1.50.0
+
+    .. note::
+        Not supported on all platforms. May return `UV_ENOTSUP`.
+        On macOS and Windows not all fields are set, the unsupported fields are filled with zeroes.
         See :c:type:`uv_rusage_t` for more details.
 
 .. c:function:: uv_pid_t uv_os_getpid(void)
@@ -237,14 +383,40 @@ API
 
     .. versionadded:: 1.16.0
 
+.. c:function:: unsigned int uv_available_parallelism(void)
+
+    Returns an estimate of the default amount of parallelism a program should
+    use. Always returns a non-zero value.
+
+    On Linux, inspects the calling thread's CPU affinity mask to determine if
+    it has been pinned to specific CPUs.
+
+    On Windows, the available parallelism may be underreported on systems with
+    more than 64 logical CPUs.
+
+    On other platforms, reports the number of CPUs that the operating system
+    considers to be online.
+
+    .. versionadded:: 1.44.0
+
 .. c:function:: int uv_cpu_info(uv_cpu_info_t** cpu_infos, int* count)
 
     Gets information about the CPUs on the system. The `cpu_infos` array will
     have `count` elements and needs to be freed with :c:func:`uv_free_cpu_info`.
 
+    Use :c:func:`uv_available_parallelism` if you need to know how many CPUs
+    are available for threads or child processes.
+
 .. c:function:: void uv_free_cpu_info(uv_cpu_info_t* cpu_infos, int count)
 
     Frees the `cpu_infos` array previously allocated with :c:func:`uv_cpu_info`.
+
+.. c:function:: int uv_cpumask_size(void)
+
+    Returns the maximum size of the mask used for process/thread affinities,
+    or `UV_ENOTSUP` if affinities are not supported on the current platform.
+
+    .. versionadded:: 1.45.0
 
 .. c:function:: int uv_interface_addresses(uv_interface_address_t** addresses, int* count)
 
@@ -259,7 +431,7 @@ API
 
 .. c:function:: void uv_loadavg(double avg[3])
 
-    Gets the load average. See: `<http://en.wikipedia.org/wiki/Load_(computing)>`_
+    Gets the load average. See: `<https://en.wikipedia.org/wiki/Load_(computing)>`_
 
     .. note::
         Returns [0,0,0] on Windows (i.e., it's not implemented).
@@ -279,6 +451,10 @@ API
 .. c:function:: int uv_ip6_name(const struct sockaddr_in6* src, char* dst, size_t size)
 
     Convert a binary structure containing an IPv6 address to a string.
+
+.. c:function:: int uv_ip_name(const struct sockaddr *src, char *dst, size_t size)
+
+    Convert a binary structure containing an IPv4 address or an IPv6 address to a string.
 
 .. c:function:: int uv_inet_ntop(int af, const void* src, char* dst, size_t size)
 .. c:function:: int uv_inet_pton(int af, const char* src, void* dst)
@@ -343,7 +519,8 @@ API
 
 .. c:function:: int uv_exepath(char* buffer, size_t* size)
 
-    Gets the executable path.
+    Gets the executable path. You *must* call `uv_setup_args` before calling
+    this function.
 
 .. c:function:: int uv_cwd(char* buffer, size_t* size)
 
@@ -412,20 +589,82 @@ API
 
     .. versionadded:: 1.9.0
 
+.. c:function:: int uv_os_get_passwd2(uv_passwd_t* pwd, uv_uid_t uid)
+
+    Gets a subset of the password file entry for the provided uid.
+    The populated data includes the username, euid, gid, shell,
+    and home directory. On non-Windows systems, all data comes from
+    :man:`getpwuid_r(3)`. On Windows, uid and gid are set to -1 and have no
+    meaning, and shell is `NULL`. After successfully calling this function, the
+    memory allocated to `pwd` needs to be freed with
+    :c:func:`uv_os_free_passwd`.
+
+    .. versionadded:: 1.45.0
+
+.. c:function:: int uv_os_get_group(uv_group_t* group, uv_uid_t gid)
+
+    Gets a subset of the group file entry for the provided uid.
+    The populated data includes the group name, gid, and members. On non-Windows
+    systems, all data comes from :man:`getgrgid_r(3)`. On Windows, uid and gid
+    are set to -1 and have no meaning. After successfully calling this function,
+    the memory allocated to `group` needs to be freed with
+    :c:func:`uv_os_free_group`.
+
+    .. versionadded:: 1.45.0
+
+.. c:function:: void uv_os_free_group(uv_passwd_t* pwd)
+
+    Frees the memory previously allocated with :c:func:`uv_os_get_group`.
+
+    .. versionadded:: 1.45.0
+
 .. c:function:: void uv_os_free_passwd(uv_passwd_t* pwd)
 
     Frees the `pwd` memory previously allocated with :c:func:`uv_os_get_passwd`.
 
     .. versionadded:: 1.9.0
 
-.. uint64_t uv_get_free_memory(void)
+.. c:function:: uint64_t uv_get_free_memory(void)
+
+    Gets the amount of free memory available in the system, as reported by
+    the kernel (in bytes). Returns 0 when unknown.
+
 .. c:function:: uint64_t uv_get_total_memory(void)
 
-    Gets memory information (in bytes).
+    Gets the total amount of physical memory in the system (in bytes).
+    Returns 0 when unknown.
+
+.. c:function:: uint64_t uv_get_constrained_memory(void)
+
+    Gets the total amount of memory available to the process (in bytes) based on
+    limits imposed by the OS. If there is no such constraint, or the constraint
+    is unknown, `0` is returned. If there is a constraining mechanism, but there
+    is no constraint set, `UINT64_MAX` is returned. Note that it is not unusual
+    for this value to be less than or greater than :c:func:`uv_get_total_memory`.
+
+    .. note::
+        This function currently only returns a non-zero value on Linux, based
+        on cgroups if it is present, and on z/OS based on RLIMIT_MEMLIMIT.
+
+    .. versionadded:: 1.29.0
+
+.. c:function:: uint64_t uv_get_available_memory(void)
+
+    Gets the amount of free memory that is still available to the process (in bytes).
+    This differs from :c:func:`uv_get_free_memory` in that it takes into account any
+    limits imposed by the OS. If there is no such constraint, or the constraint
+    is unknown, the amount returned will be identical to :c:func:`uv_get_free_memory`.
+
+    .. note::
+        This function currently only returns a value that is different from
+        what :c:func:`uv_get_free_memory` reports on Linux, based
+        on cgroups if it is present.
+
+    .. versionadded:: 1.45.0
 
 .. c:function:: uint64_t uv_hrtime(void)
 
-    Returns the current high-resolution real time. This is expressed in
+    Returns the current high-resolution timestamp. This is expressed in
     nanoseconds. It is relative to an arbitrary time in the past. It is not
     related to the time of day and therefore not subject to clock drift. The
     primary use is for measuring performance between intervals.
@@ -433,6 +672,19 @@ API
     .. note::
         Not every platform can support nanosecond resolution; however, this value will always
         be in nanoseconds.
+
+.. c:function:: int uv_clock_gettime(uv_clock_id clock_id, uv_timespec64_t* ts)
+
+    Obtain the current system time from a high-resolution real-time or monotonic
+    clock source.
+
+    The real-time clock counts from the UNIX epoch (1970-01-01) and is subject
+    to time adjustments; it can jump back in time.
+
+    The monotonic clock counts from an arbitrary point in the past and never
+    jumps back in time.
+
+    .. versionadded:: 1.45.0
 
 .. c:function:: void uv_print_all_handles(uv_loop_t* loop, FILE* stream)
 
@@ -471,6 +723,23 @@ API
         stability guarantees.
 
     .. versionadded:: 1.8.0
+
+.. c:function:: int uv_os_environ(uv_env_item_t** envitems, int* count)
+
+    Retrieves all environment variables. This function will allocate memory
+    which must be freed by calling :c:func:`uv_os_free_environ`.
+
+    .. warning::
+        This function is not thread safe.
+
+    .. versionadded:: 1.31.0
+
+.. c:function:: void uv_os_free_environ(uv_env_item_t* envitems, int count);
+
+    Frees the memory allocated for the environment variables by
+    :c:func:`uv_os_environ`.
+
+    .. versionadded:: 1.31.0
 
 .. c:function:: int uv_os_getenv(const char* name, char* buffer, size_t* size)
 
@@ -518,6 +787,10 @@ API
 
     .. versionadded:: 1.12.0
 
+    .. versionchanged:: 1.26.0 `UV_MAXHOSTNAMESIZE` is available and represents
+                               the maximum `buffer` size required to store a
+                               hostname and terminating `nul` character.
+
 .. c:function:: int uv_os_getpriority(uv_pid_t pid, int* priority)
 
     Retrieves the scheduling priority of the process specified by `pid`. The
@@ -548,4 +821,120 @@ API
         On Windows, setting `PRIORITY_HIGHEST` will only work for elevated user,
         for others it will be silently reduced to `PRIORITY_HIGH`.
 
+    .. note::
+        On IBM i PASE, the highest process priority is -10. The constant
+        `UV_PRIORITY_HIGHEST` is -10, `UV_PRIORITY_HIGH` is -7, 
+        `UV_PRIORITY_ABOVE_NORMAL` is -4, `UV_PRIORITY_NORMAL` is 0,
+        `UV_PRIORITY_BELOW_NORMAL` is 15 and `UV_PRIORITY_LOW` is 39.
+
+    .. note::
+        On IBM i PASE, you are not allowed to change your priority unless you
+        have the \*JOBCTL special authority (even to lower it).
+
     .. versionadded:: 1.23.0
+
+.. c:function:: int uv_os_uname(uv_utsname_t* buffer)
+
+    Retrieves system information in `buffer`. The populated data includes the
+    operating system name, release, version, and machine. On non-Windows
+    systems, `uv_os_uname()` is a thin wrapper around :man:`uname(2)`. Returns
+    zero on success, and a non-zero error value otherwise.
+
+    .. versionadded:: 1.25.0
+
+.. c:function:: int uv_gettimeofday(uv_timeval64_t* tv)
+
+    Cross-platform implementation of :man:`gettimeofday(2)`. The timezone
+    argument to `gettimeofday()` is not supported, as it is considered obsolete.
+
+    .. versionadded:: 1.28.0
+
+.. c:function:: int uv_random(uv_loop_t* loop, uv_random_t* req, void* buf, size_t buflen, unsigned int flags, uv_random_cb cb)
+
+    Fill `buf` with exactly `buflen` cryptographically strong random bytes
+    acquired from the system CSPRNG. `flags` is reserved for future extension
+    and must currently be 0.
+
+    Short reads are not possible. When less than `buflen` random bytes are
+    available, a non-zero error value is returned or passed to the callback.
+
+    The synchronous version may block indefinitely when not enough entropy
+    is available. The asynchronous version may not ever finish when the system
+    is low on entropy.
+
+    Sources of entropy:
+
+    - Windows: `RtlGenRandom <https://docs.microsoft.com/en-us/windows/desktop/api/ntsecapi/nf-ntsecapi-rtlgenrandom>_`.
+    - Linux, Android: :man:`getrandom(2)` if available, or :man:`urandom(4)`
+      after reading from `/dev/random` once, or the `KERN_RANDOM`
+      :man:`sysctl(2)`.
+    - FreeBSD: `getrandom(2) <https://www.freebsd.org/cgi/man.cgi?query=getrandom&sektion=2>_`,
+      or `/dev/urandom` after reading from `/dev/random` once.
+    - NetBSD: `KERN_ARND` `sysctl(7) <https://man.netbsd.org/sysctl.7>_`
+    - macOS, OpenBSD: `getentropy(2) <https://man.openbsd.org/getentropy.2>_`
+      if available, or `/dev/urandom` after reading from `/dev/random` once.
+    - AIX: `/dev/random`.
+    - IBM i: `/dev/urandom`.
+    - Other UNIX: `/dev/urandom` after reading from `/dev/random` once.
+
+    :returns: 0 on success, or an error code < 0 on failure. The contents of
+        `buf` is undefined after an error.
+
+    .. note::
+        When using the synchronous version, both `loop` and `req` parameters
+        are not used and can be set to `NULL`.
+
+    .. versionadded:: 1.33.0
+
+.. c:function:: void uv_sleep(unsigned int msec)
+
+    Causes the calling thread to sleep for `msec` milliseconds.
+
+    .. versionadded:: 1.34.0
+
+String manipulation functions
+-----------------------------
+
+These string utilities are needed internally for dealing with Windows, and are
+exported to allow clients to work uniformly with this data when the libuv API
+is not complete.
+
+.. c:function:: size_t uv_utf16_length_as_wtf8(const uint16_t* utf16, ssize_t utf16_len)
+
+    Get the length of a UTF-16 (or UCS-2) `utf16` value after converting it to
+    WTF-8. If `utf16` is NUL terminated, `utf16_len` can be set to -1,
+    otherwise it must be specified.
+
+    .. versionadded:: 1.47.0
+
+.. c:function:: int uv_utf16_to_wtf8(const uint16_t* utf16, ssize_t utf16_len, char** wtf8_ptr, size_t* wtf8_len_ptr)
+
+    Convert UTF-16 (or UCS-2) data in `utf16` to WTF-8 data in `*wtf8_ptr`. The
+    `utf16_len` count (in characters) gives the length of `utf16`. If `utf16`
+    is NUL terminated, `utf16_len` can be set to -1, otherwise it must be
+    specified. If `wtf8_ptr` is `NULL`, no result will be computed, but the
+    length (equal to `uv_utf16_length_as_wtf8`) will be stored in `wtf8_ptr`.
+    If `*wtf8_ptr` is `NULL`, space for the conversion will be allocated and
+    returned in `wtf8_ptr` and the length will be returned in `wtf8_len_ptr`.
+    Otherwise, the length of `*wtf8_ptr` must be passed in `wtf8_len_ptr`. The
+    `wtf8_ptr` must contain an extra space for an extra NUL after the result.
+    If the result is truncated, `UV_ENOBUFS` will be returned and
+    `wtf8_len_ptr` will be the length of the required `wtf8_ptr` to contain the
+    whole result.
+
+    .. versionadded:: 1.47.0
+
+.. c:function:: ssize_t uv_wtf8_length_as_utf16(const char* wtf8)
+
+    Get the length in characters of a NUL-terminated WTF-8 `wtf8` value
+    after converting it to UTF-16 (or UCS-2), including NUL terminator.
+
+    .. versionadded:: 1.47.0
+
+.. c:function:: void uv_wtf8_to_utf16(const char* utf8, uint16_t* utf16, size_t utf16_len)
+
+    Convert NUL-terminated WTF-8 data in `wtf8` to UTF-16 (or UCS-2) data
+    in `utf16`. The `utf16_len` count (in characters) must include space
+    for the NUL terminator.
+
+    .. versionadded:: 1.47.0

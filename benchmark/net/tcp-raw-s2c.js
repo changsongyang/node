@@ -5,28 +5,29 @@
 const common = require('../common.js');
 const util = require('util');
 
-// if there are dur=N and len=N args, then
+// If there are dur=N and len=N args, then
 // run the function with those settings.
-// if not, then queue up a bunch of child processes.
+// If not, then queue up a bunch of child processes.
 const bench = common.createBenchmark(main, {
-  len: [102400, 1024 * 1024 * 16],
+  len: [102400, 1024 * 64 * 16],
   type: ['utf', 'asc', 'buf'],
-  dur: [5]
+  dur: [5],
 }, {
-  flags: [ '--expose-internals', '--no-warnings' ]
+  test: { len: 1024 },
+  flags: [ '--expose-internals', '--no-warnings' ],
 });
 
 function main({ dur, len, type }) {
   const {
     TCP,
     TCPConnectWrap,
-    constants: TCPConstants
+    constants: TCPConstants,
   } = common.binding('tcp_wrap');
   const { WriteWrap } = common.binding('stream_wrap');
   const PORT = common.PORT;
 
   const serverHandle = new TCP(TCPConstants.SERVER);
-  var err = serverHandle.bind('127.0.0.1', PORT);
+  let err = serverHandle.bind('127.0.0.1', PORT);
   if (err)
     fail(err, 'bind');
 
@@ -38,7 +39,7 @@ function main({ dur, len, type }) {
     if (err)
       fail(err, 'connect');
 
-    var chunk;
+    let chunk;
     switch (type) {
       case 'buf':
         chunk = Buffer.alloc(len, 'x');
@@ -62,7 +63,7 @@ function main({ dur, len, type }) {
       const writeReq = new WriteWrap();
       writeReq.async = false;
       writeReq.oncomplete = afterWrite;
-      var err;
+      let err;
       switch (type) {
         case 'buf':
           err = clientHandle.writeBuffer(writeReq, chunk);
@@ -78,7 +79,7 @@ function main({ dur, len, type }) {
       if (err) {
         fail(err, 'write');
       } else if (!writeReq.async) {
-        process.nextTick(function() {
+        process.nextTick(() => {
           afterWrite(0, clientHandle);
         });
       }
@@ -108,24 +109,24 @@ function main({ dur, len, type }) {
       fail(err, 'connect');
 
     connectReq.oncomplete = function() {
-      var bytes = 0;
+      let bytes = 0;
       clientHandle.onread = function(buffer) {
-        // we're not expecting to ever get an EOF from the client.
-        // just lots of data forever.
+        // We're not expecting to ever get an EOF from the client.
+        // Just lots of data forever.
         if (!buffer)
           fail('read');
 
-        // don't slice the buffer.  the point of this is to isolate, not
+        // Don't slice the buffer. The point of this is to isolate, not
         // simulate real traffic.
         bytes += buffer.byteLength;
       };
 
       clientHandle.readStart();
 
-      // the meat of the benchmark is right here:
+      // The meat of the benchmark is right here:
       bench.start();
 
-      setTimeout(function() {
+      setTimeout(() => {
         // report in Gb/sec
         bench.end((bytes * 8) / (1024 * 1024 * 1024));
         process.exit(0);

@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --no-always-opt
+// Flags: --allow-natives-syntax
 
 function literals_sharing_test(warmup, optimize) {
   function closure() {
     // Ensure small array literals start in specific element kind mode.
     assertTrue(%HasSmiElements([]));
     assertTrue(%HasSmiElements([1]));
-    assertTrue(%HasSmiElements([1,2]));
+    assertTrue(%HasSmiElements([1, 2]));
     assertTrue(%HasDoubleElements([1.1]));
-    assertTrue(%HasDoubleElements([1.1,2]));
+    assertTrue(%HasDoubleElements([1.1, 2]));
 
     var a = [1, 2, 3];
     if (warmup) {
@@ -23,6 +23,9 @@ function literals_sharing_test(warmup, optimize) {
     // propagated to the next closure.
     assertTrue(%HasDoubleElements(a));
   };
+  %PrepareFunctionForOptimization(closure);
+  ;
+  %EnsureFeedbackVectorForFunction(closure);
   if (optimize) %OptimizeFunctionOnNextCall(closure);
   closure();
 }
@@ -31,7 +34,7 @@ function literals_sharing_test(warmup, optimize) {
 function test() {
   var warmup = true;
   for (var i = 0; i < 3; i++) {
-    print("iter: " + i + ", warmup: "+ warmup);
+    print('iter: ' + i + ', warmup: ' + warmup);
     literals_sharing_test(warmup, false);
     warmup = false;
   }

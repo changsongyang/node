@@ -147,11 +147,11 @@ function foo(eval) {\
 })();
 
 // Octal literal
-CheckStrictMode("var x = 012");
-CheckStrictMode("012");
-CheckStrictMode("'Hello octal\\032'");
-CheckStrictMode("function octal() { return 012; }");
-CheckStrictMode("function octal() { return '\\032'; }");
+CheckStrictMode("var x = 012", SyntaxError);
+CheckStrictMode("012", SyntaxError);
+CheckStrictMode("'Hello octal\\032'", SyntaxError);
+CheckStrictMode("function octal() { return 012; }", SyntaxError);
+CheckStrictMode("function octal() { return '\\032'; }", SyntaxError);
 
 (function ValidEscape() {
   "use strict";
@@ -1013,10 +1013,6 @@ function CheckFunctionPillDescriptor(func, name) {
   function CheckPill(pill) {
     assertEquals("function", typeof pill);
     assertInstanceof(pill, Function);
-    pill.property = "value";
-    assertEquals(pill.value, undefined);
-    assertThrows(function() { 'use strict'; pill.property = "value"; },
-                 TypeError);
     assertThrows(pill, TypeError);
     assertEquals(undefined, pill.prototype);
   }
@@ -1037,10 +1033,6 @@ function CheckArgumentsPillDescriptor(func, name) {
   function CheckPill(pill) {
     assertEquals("function", typeof pill);
     assertInstanceof(pill, Function);
-    pill.property = "value";
-    assertEquals(pill.value, undefined);
-    assertThrows(function() { 'use strict'; pill.property = "value"; },
-                 TypeError);
     assertThrows(pill, TypeError);
     assertEquals(undefined, pill.prototype);
   }
@@ -1210,7 +1202,7 @@ function CheckArgumentsPillDescriptor(func, name) {
 
   function non_strict(n) {
     return recurse(n, function() {
-      return Object.getOwnPropertyDescriptor(non_strict, "caller").value;
+      return non_strict.caller;
     });
   }
 

@@ -27,23 +27,21 @@
 
 #include <memory>
 
-#include "src/v8.h"
-
-#include "src/api-inl.h"
+#include "src/api/api-inl.h"
 #include "src/debug/debug.h"
-#include "src/objects-inl.h"
-#include "src/string-search.h"
+#include "src/objects/objects-inl.h"
+#include "src/strings/string-search.h"
 #include "test/cctest/cctest.h"
 
-
-using ::v8::internal::CStrVector;
+using ::v8::base::CStrVector;
+using ::v8::base::Vector;
+using ::v8::internal::DirectHandle;
 using ::v8::internal::Factory;
 using ::v8::internal::Handle;
 using ::v8::internal::Heap;
 using ::v8::internal::JSFunction;
 using ::v8::internal::Runtime;
 using ::v8::internal::SharedFunctionInfo;
-using ::v8::internal::Vector;
 
 
 static void CheckFunctionName(v8::Local<v8::Script> script,
@@ -52,50 +50,48 @@ static void CheckFunctionName(v8::Local<v8::Script> script,
   i::Isolate* isolate = CcTest::i_isolate();
 
   // Get script source.
-  Handle<i::Object> obj = v8::Utils::OpenHandle(*script);
-  Handle<SharedFunctionInfo> shared_function;
-  if (obj->IsSharedFunctionInfo()) {
-    shared_function =
-        Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(*obj), isolate);
-  } else {
-    shared_function =
-        Handle<SharedFunctionInfo>(JSFunction::cast(*obj)->shared(), isolate);
-  }
-  Handle<i::Script> i_script(i::Script::cast(shared_function->script()),
+  DirectHandle<i::Object> obj = v8::Utils::OpenDirectHandle(*script);
+  DirectHandle<SharedFunctionInfo> shared_function(
+      IsSharedFunctionInfo(*obj) ? Cast<SharedFunctionInfo>(*obj)
+                                 : Cast<JSFunction>(*obj)->shared(),
+      isolate);
+  Handle<i::Script> i_script(i::Cast<i::Script>(shared_function->script()),
                              isolate);
-  CHECK(i_script->source()->IsString());
-  Handle<i::String> script_src(i::String::cast(i_script->source()), isolate);
+  CHECK(IsString(i_script->source()));
+  DirectHandle<i::String> script_src(i::Cast<i::String>(i_script->source()),
+                                     isolate);
 
   // Find the position of a given func source substring in the source.
   int func_pos;
   {
-    i::DisallowHeapAllocation no_gc;
-    Vector<const uint8_t> func_pos_str = i::OneByteVector(func_pos_src);
-    i::String::FlatContent script_content = script_src->GetFlatContent();
+    i::DisallowGarbageCollection no_gc;
+    v8::base::Vector<const uint8_t> func_pos_str =
+        v8::base::OneByteVector(func_pos_src);
+    i::String::FlatContent script_content = script_src->GetFlatContent(no_gc);
     func_pos = SearchString(isolate, script_content.ToOneByteVector(),
                             func_pos_str, 0);
   }
   CHECK_NE(0, func_pos);
 
   // Obtain SharedFunctionInfo for the function.
-  Handle<SharedFunctionInfo> shared_func_info =
-      Handle<SharedFunctionInfo>::cast(
-          isolate->debug()->FindSharedFunctionInfoInScript(i_script, func_pos));
+  DirectHandle<SharedFunctionInfo> shared_func_info = Cast<SharedFunctionInfo>(
+      isolate->debug()->FindInnermostContainingFunctionInfo(i_script,
+                                                            func_pos));
 
   // Verify inferred function name.
   std::unique_ptr<char[]> inferred_name =
       shared_func_info->inferred_name()->ToCString();
-  i::PrintF("expected: %s, found: %s\n", ref_inferred_name,
-            inferred_name.get());
-  CHECK_EQ(0, strcmp(ref_inferred_name, inferred_name.get()));
+  if (strcmp(ref_inferred_name, inferred_name.get()) != 0) {
+    GRACEFUL_FATAL("expected: %s, found: %s\n", ref_inferred_name,
+                   inferred_name.get());
+  }
 }
 
 
 static v8::Local<v8::Script> Compile(v8::Isolate* isolate, const char* src) {
   return v8::Script::Compile(
              isolate->GetCurrentContext(),
-             v8::String::NewFromUtf8(isolate, src, v8::NewStringType::kNormal)
-                 .ToLocalChecked())
+             v8::String::NewFromUtf8(isolate, src).ToLocalChecked())
       .ToLocalChecked();
 }
 
@@ -453,8 +449,8 @@ TEST(FactoryHashmapVariable) {
               "  return obj;\n"
               "}");
   // Can't infer function names statically.
-  CheckFunctionName(script, "return 1", "obj.(anonymous function)");
-  CheckFunctionName(script, "return 2", "obj.(anonymous function)");
+  CheckFunctionName(script, "return 1", "obj.<computed>");
+  CheckFunctionName(script, "return 2", "obj.<computed>");
 }
 
 
@@ -470,7 +466,7 @@ TEST(FactoryHashmapConditional) {
       "  return obj;\n"
       "}");
   // Can't infer the function name statically.
-  CheckFunctionName(script, "return 1", "obj.(anonymous function)");
+  CheckFunctionName(script, "return 1", "obj.<computed>");
 }
 
 

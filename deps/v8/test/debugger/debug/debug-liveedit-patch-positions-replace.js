@@ -34,7 +34,7 @@
 // change they are 114 characters away from each other. New instance of Code is
 // required when those numbers cross the border value of 64 (in any direction).
 
-// Flags: --allow-natives-syntax
+// Flags: --allow-natives-syntax --inspector-live-edit
 Debug = debug.Debug
 
 eval(
@@ -65,7 +65,7 @@ function CallM(changer) {
 }
 
 // This several iterations should cause call IC for BeingReplaced call. This IC
-// will keep reference to code object of BeingRepalced function. This reference
+// will keep reference to code object of BeingReplaced function. This reference
 // should also be patched. Unfortunately, this is a manually checked fact (from
 // debugger or debug print) and doesn't work as an automatic test.
 CallM(NoOp);

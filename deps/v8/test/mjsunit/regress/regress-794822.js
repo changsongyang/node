@@ -5,15 +5,17 @@
 // Flags: --allow-natives-syntax
 
 function* opt(arg = () => arg) {
-  let tmp = opt.x;  // LdaNamedProperty
+  let tmp = opt.x;  // GetNamedProperty
   for (;;) {
     arg;
     yield;
-    function inner() { tmp }
+    function inner() {
+      tmp;
+    }
     break;
   }
-}
-
+};
+%PrepareFunctionForOptimization(opt);
 opt();
 %OptimizeFunctionOnNextCall(opt);
 opt();

@@ -26,6 +26,10 @@
 #include <stdlib.h>
 #include <string.h> /* memset */
 
+#ifdef __POSIX__
+#include <pthread.h>
+#endif
+
 struct getaddrinfo_req {
   uv_thread_t thread_id;
   unsigned int counter;
@@ -67,7 +71,7 @@ static void getaddrinfo_do(struct getaddrinfo_req* req) {
                      "localhost",
                      NULL,
                      NULL);
-  ASSERT(r == 0);
+  ASSERT_OK(r);
 }
 
 
@@ -76,7 +80,7 @@ static void getaddrinfo_cb(uv_getaddrinfo_t* handle,
                            struct addrinfo* res) {
   struct getaddrinfo_req* req;
 
-  ASSERT(status == 0);
+  ASSERT_OK(status);
 
   req = container_of(handle, struct getaddrinfo_req, handle);
   uv_freeaddrinfo(res);
@@ -90,7 +94,7 @@ static void fs_do(struct fs_req* req) {
   int r;
 
   r = uv_fs_stat(req->loop, &req->handle, ".", fs_cb);
-  ASSERT(r == 0);
+  ASSERT_OK(r);
 }
 
 
@@ -111,7 +115,7 @@ static void do_work(void* arg) {
   size_t i;
   struct test_thread* thread = arg;
 
-  ASSERT(0 == uv_loop_init(&loop));
+  ASSERT_OK(uv_loop_init(&loop));
 
   for (i = 0; i < ARRAY_SIZE(getaddrinfo_reqs); i++) {
     struct getaddrinfo_req* req = getaddrinfo_reqs + i;
@@ -127,14 +131,14 @@ static void do_work(void* arg) {
     fs_do(req);
   }
 
-  ASSERT(0 == uv_run(&loop, UV_RUN_DEFAULT));
-  ASSERT(0 == uv_loop_close(&loop));
+  ASSERT_OK(uv_run(&loop, UV_RUN_DEFAULT));
+  ASSERT_OK(uv_loop_close(&loop));
   thread->thread_called = 1;
 }
 
 
 static void thread_entry(void* arg) {
-  ASSERT(arg == (void *) 42);
+  ASSERT_PTR_EQ(arg, (void *) 42);
   thread_called++;
 }
 
@@ -144,12 +148,12 @@ TEST_IMPL(thread_create) {
   int r;
 
   r = uv_thread_create(&tid, thread_entry, (void *) 42);
-  ASSERT(r == 0);
+  ASSERT_OK(r);
 
   r = uv_thread_join(&tid);
-  ASSERT(r == 0);
+  ASSERT_OK(r);
 
-  ASSERT(thread_called == 1);
+  ASSERT_EQ(1, thread_called);
 
   return 0;
 }
@@ -159,6 +163,11 @@ TEST_IMPL(thread_create) {
  * that each "finished" callback is run in its originating thread.
  */
 TEST_IMPL(threadpool_multiple_event_loops) {
+/* TODO(gengjiawen): Fix test on QEMU. */
+#if defined(__QEMU__)
+  RETURN_SKIP("Test does not currently work in QEMU");
+#endif
+  
   struct test_thread threads[8];
   size_t i;
   int r;
@@ -167,13 +176,13 @@ TEST_IMPL(threadpool_multiple_event_loops) {
 
   for (i = 0; i < ARRAY_SIZE(threads); i++) {
     r = uv_thread_create(&threads[i].thread_id, do_work, &threads[i]);
-    ASSERT(r == 0);
+    ASSERT_OK(r);
   }
 
   for (i = 0; i < ARRAY_SIZE(threads); i++) {
     r = uv_thread_join(&threads[i].thread_id);
-    ASSERT(r == 0);
-    ASSERT(threads[i].thread_called == 1);
+    ASSERT_OK(r);
+    ASSERT_EQ(1, threads[i].thread_called);
   }
 
   return 0;
@@ -181,25 +190,25 @@ TEST_IMPL(threadpool_multiple_event_loops) {
 
 
 static void tls_thread(void* arg) {
-  ASSERT(NULL == uv_key_get(&tls_key));
+  ASSERT_NULL(uv_key_get(&tls_key));
   uv_key_set(&tls_key, arg);
-  ASSERT(arg == uv_key_get(&tls_key));
+  ASSERT_PTR_EQ(arg, uv_key_get(&tls_key));
   uv_key_set(&tls_key, NULL);
-  ASSERT(NULL == uv_key_get(&tls_key));
+  ASSERT_NULL(uv_key_get(&tls_key));
 }
 
 
 TEST_IMPL(thread_local_storage) {
   char name[] = "main";
   uv_thread_t threads[2];
-  ASSERT(0 == uv_key_create(&tls_key));
-  ASSERT(NULL == uv_key_get(&tls_key));
+  ASSERT_OK(uv_key_create(&tls_key));
+  ASSERT_NULL(uv_key_get(&tls_key));
   uv_key_set(&tls_key, name);
-  ASSERT(name == uv_key_get(&tls_key));
-  ASSERT(0 == uv_thread_create(threads + 0, tls_thread, threads + 0));
-  ASSERT(0 == uv_thread_create(threads + 1, tls_thread, threads + 1));
-  ASSERT(0 == uv_thread_join(threads + 0));
-  ASSERT(0 == uv_thread_join(threads + 1));
+  ASSERT_PTR_EQ(name, uv_key_get(&tls_key));
+  ASSERT_OK(uv_thread_create(threads + 0, tls_thread, threads + 0));
+  ASSERT_OK(uv_thread_create(threads + 1, tls_thread, threads + 1));
+  ASSERT_OK(uv_thread_join(threads + 0));
+  ASSERT_OK(uv_thread_join(threads + 1));
   uv_key_delete(&tls_key);
   return 0;
 }
@@ -207,26 +216,91 @@ TEST_IMPL(thread_local_storage) {
 
 static void thread_check_stack(void* arg) {
 #if defined(__APPLE__)
+  size_t expected;
+  expected = arg == NULL ? 0 : ((uv_thread_options_t*)arg)->stack_size;
   /* 512 kB is the default stack size of threads other than the main thread
    * on MacOS. */
-  ASSERT(pthread_get_stacksize_np(pthread_self()) > 512*1024);
+  if (expected == 0)
+    expected = 512 * 1024;
+  ASSERT_GE(pthread_get_stacksize_np(pthread_self()), expected);
 #elif defined(__linux__) && defined(__GLIBC__)
+  size_t expected;
   struct rlimit lim;
   size_t stack_size;
   pthread_attr_t attr;
-  ASSERT(0 == getrlimit(RLIMIT_STACK, &lim));
+  ASSERT_OK(getrlimit(RLIMIT_STACK, &lim));
   if (lim.rlim_cur == RLIM_INFINITY)
     lim.rlim_cur = 2 << 20;  /* glibc default. */
-  ASSERT(0 == pthread_getattr_np(pthread_self(), &attr));
-  ASSERT(0 == pthread_attr_getstacksize(&attr, &stack_size));
-  ASSERT(stack_size >= lim.rlim_cur);
+  ASSERT_OK(pthread_getattr_np(pthread_self(), &attr));
+  ASSERT_OK(pthread_attr_getstacksize(&attr, &stack_size));
+  expected = arg == NULL ? 0 : ((uv_thread_options_t*)arg)->stack_size;
+  if (expected == 0)
+    expected = (size_t)lim.rlim_cur;
+  ASSERT_GE(stack_size, expected);
+  ASSERT_OK(pthread_attr_destroy(&attr));
 #endif
 }
 
 
 TEST_IMPL(thread_stack_size) {
   uv_thread_t thread;
-  ASSERT(0 == uv_thread_create(&thread, thread_check_stack, NULL));
-  ASSERT(0 == uv_thread_join(&thread));
+  ASSERT_OK(uv_thread_create(&thread, thread_check_stack, NULL));
+  ASSERT_OK(uv_thread_join(&thread));
+  return 0;
+}
+
+TEST_IMPL(thread_stack_size_explicit) {
+  uv_thread_t thread;
+  uv_thread_options_t options;
+
+  options.flags = UV_THREAD_HAS_STACK_SIZE;
+  options.stack_size = 1024 * 1024;
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+  options.stack_size = 8 * 1024 * 1024;  /* larger than most default os sizes */
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+  options.stack_size = 0;
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+  options.stack_size = 42;
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+#ifdef PTHREAD_STACK_MIN
+  options.stack_size = PTHREAD_STACK_MIN - 42;  /* unaligned size */
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+  options.stack_size = PTHREAD_STACK_MIN / 2 - 42;  /* unaligned size */
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+#endif
+
+  /* unaligned size, should be larger than PTHREAD_STACK_MIN */
+  options.stack_size = 1234567;
+  ASSERT_OK(uv_thread_create_ex(&thread, &options,
+                                thread_check_stack, &options));
+  ASSERT_OK(uv_thread_join(&thread));
+
+  return 0;
+}
+
+static void thread_detach_cb(void* arg) {}
+
+TEST_IMPL(thread_detach) {
+  uv_thread_t thread;
+  ASSERT_OK(uv_thread_create(&thread, thread_detach_cb, NULL));
+  ASSERT_OK(uv_thread_detach(&thread));
+
   return 0;
 }

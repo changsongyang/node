@@ -35,7 +35,7 @@ var workerScript =
 // context.
    foo = 100;
    var c = 0;
-   onmessage = function(m) {
+   onmessage = function({data:m}) {
      switch (c++) {
        case 0:
          if (m !== undefined) throw new Error('undefined');
@@ -82,8 +82,16 @@ var workerScript =
            if (t[i] !== i)
              throw new Error('ArrayBuffer transfer value ' + i);
          break;
+      case 10:
+        if (JSON.stringify(m) !== '{"foo":{},"err":{}}')
+          throw new Error('Object ' + JSON.stringify(m));
+        break;
+      case 11:
+        if (m.message != "message")
+          throw new Error('Error ' + JSON.stringify(m));
+        break;
      }
-     if (c == 10) {
+     if (c == 12) {
        postMessage('DONE');
      }
    };`;
@@ -97,7 +105,21 @@ if (this.Worker) {
     return ab;
   }
 
-  var w = new Worker(workerScript);
+  assertThrows(function() {
+    // Second arg must be 'options' object
+    new Worker(workerScript, 123);
+  });
+
+  assertThrows(function() {
+    new Worker('test/mjsunit/d8/d8-worker.js', {type: 'invalid'});
+  });
+
+  assertThrows(function() {
+    // worker type defaults to 'classic' which tries to load from file
+    new Worker(workerScript);
+  });
+
+  var w = new Worker(workerScript, {type: 'string'});
 
   assertEquals("Starting worker", w.getMessage());
 
@@ -133,14 +155,27 @@ if (this.Worker) {
   // Clone ArrayBuffer
   var ab1 = createArrayBuffer(16);
   w.postMessage(ab1);
-  assertEquals(16, ab1.byteLength);  // ArrayBuffer should not be neutered.
+  assertEquals(16, ab1.byteLength);  // ArrayBuffer should not be detached.
 
   // Transfer ArrayBuffer
   var ab2 = createArrayBuffer(32);
   w.postMessage(ab2, [ab2]);
-  assertEquals(0, ab2.byteLength);  // ArrayBuffer should be neutered.
+  assertEquals(0, ab2.byteLength);  // ArrayBuffer should be detached.
+
+  // Attempting to transfer the same ArrayBuffer twice should throw.
+  assertThrows(function() {
+    var ab3 = createArrayBuffer(4);
+    w.postMessage(ab3, [ab3, ab3]);
+  });
 
   assertEquals("undefined", typeof foo);
+
+  // Transfer Error
+  const err = new Error();
+  w.postMessage({ foo: err, err })
+
+  // Transfer single Error
+  w.postMessage(new Error("message"))
 
   // Read a message from the worker.
   assertEquals("DONE", w.getMessage());
@@ -150,7 +185,13 @@ if (this.Worker) {
 
   // Make sure that the main thread doesn't block forever in getMessage() if
   // the worker dies without posting a message.
-  var w2 = new Worker('');
+  var w2 = new Worker('', {type: 'string'});
   var msg = w2.getMessage();
   assertEquals(undefined, msg);
+
+  // Test close (should send termination to worker isolate).
+  var close_worker = new Worker(
+      "postMessage('one'); close(); while(true) { postMessage('two'); }",
+      {type: "string"})
+  assertEquals("one", close_worker.getMessage());
 }

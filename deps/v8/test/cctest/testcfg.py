@@ -25,7 +25,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import os
+# for py2/py3 compatibility
+from __future__ import print_function
+
 import shutil
 
 from testrunner.local import command
@@ -36,24 +38,44 @@ from testrunner.objects import testcase
 SHELL = 'cctest'
 
 
-class TestSuite(testsuite.TestSuite):
-  def ListTests(self):
-    shell = os.path.abspath(os.path.join(self.test_config.shell_dir, SHELL))
-    if utils.IsWindows():
-      shell += ".exe"
-    cmd = command.Command(
-        cmd_prefix=self.test_config.command_prefix,
-        shell=shell,
-        args=["--list"] + self.test_config.extra_flags)
+class TestLoader(testsuite.TestLoader):
+  def _list_test_filenames(self):
+    args = ["--list"] + self.test_config.extra_flags
+    shell = self.ctx.platform_shell(SHELL, args, self.test_config.shell_dir)
+    cmd = self.ctx.command(
+        cmd_prefix=self.test_config.command_prefix, shell=shell, args=args)
     output = cmd.execute()
+    # TODO make errors visible (see duplicated code in 'unittests')
     if output.exit_code != 0:
-      print cmd
-      print output.stdout
-      print output.stderr
+      print(cmd)
+      print(output.stdout)
+      print(output.stderr)
       return []
-    tests = map(self._create_test, output.stdout.strip().split())
-    tests.sort(key=lambda t: t.path)
-    return tests
+
+    filtered_output = []
+    test_prefix = '**>Test: '
+    test_total_prefix = 'Total number of tests: '
+    tests_total = 0
+
+    for line in output.stdout.strip().splitlines():
+      # When the command runs through another executable (e.g. iOS Simulator),
+      # it is possible that the stdout will show something else in the same
+      # line of the actual test output so it's necessary to harness for that
+      # case.
+      if test_prefix in line:
+        filtered_output.append(line[len(test_prefix):])
+      if line.startswith(test_total_prefix):
+        tests_total = int(line[len(test_total_prefix):])
+
+    assert (len(filtered_output) > 0)
+    assert (len(filtered_output) == tests_total)
+
+    return sorted(filtered_output)
+
+
+class TestSuite(testsuite.TestSuite):
+  def _test_loader_class(self):
+    return TestLoader
 
   def _test_class(self):
     return TestCase
@@ -64,8 +86,4 @@ class TestCase(testcase.TestCase):
     return SHELL
 
   def _get_files_params(self):
-    return [self.path]
-
-
-def GetSuite(*args, **kwargs):
-  return TestSuite(*args, **kwargs)
+    return [self.name]

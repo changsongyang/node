@@ -16,7 +16,7 @@ Data types
 
     TTY handle type.
 
-.. c:type:: uv_tty_mode_t
+.. c:enum:: uv_tty_mode_t
 
     .. versionadded:: 1.2.0
 
@@ -27,11 +27,34 @@ Data types
       typedef enum {
           /* Initial/normal terminal mode */
           UV_TTY_MODE_NORMAL,
-          /* Raw input mode (On Windows, ENABLE_WINDOW_INPUT is also enabled) */
+          /*
+          * Raw input mode (On Windows, ENABLE_WINDOW_INPUT is also enabled).
+          * May become equivalent to UV_TTY_MODE_RAW_VT in future libuv versions.
+          */
           UV_TTY_MODE_RAW,
           /* Binary-safe I/O mode for IPC (Unix-only) */
-          UV_TTY_MODE_IO
+          UV_TTY_MODE_IO,
+          /* Raw input mode. On Windows ENABLE_VIRTUAL_TERMINAL_INPUT is also set. */
+          UV_TTY_MODE_RAW_VT
       } uv_tty_mode_t;
+
+.. c:enum:: uv_tty_vtermstate_t
+
+    Console virtual terminal mode type:
+
+    ::
+
+      typedef enum {
+          /*
+           * The console supports handling of virtual terminal sequences
+           * (Windows10 new console, ConEmu)
+           */
+          UV_TTY_SUPPORTED,
+          /* The console cannot process virtual terminal sequences.  (Legacy
+           * console)
+           */
+          UV_TTY_UNSUPPORTED
+      } uv_tty_vtermstate_t
 
 
 
@@ -80,7 +103,7 @@ API
 .. c:function:: int uv_tty_set_mode(uv_tty_t* handle, uv_tty_mode_t mode)
 
     .. versionchanged:: 1.2.0: the mode is specified as a
-                        :c:type:`uv_tty_mode_t` value.
+                        :c:enum:`uv_tty_mode_t` value.
 
     Set the TTY using the specified terminal mode.
 
@@ -98,3 +121,25 @@ API
     Gets the current Window size. On success it returns 0.
 
 .. seealso:: The :c:type:`uv_stream_t` API functions also apply.
+
+.. c:function:: void uv_tty_set_vterm_state(uv_tty_vtermstate_t state)
+
+    Controls whether console virtual terminal sequences are processed by libuv
+    or console.
+    Useful in particular for enabling ConEmu support of ANSI X3.64 and Xterm
+    256 colors. Otherwise Windows10 consoles are usually detected automatically.
+
+    This function is only meaningful on Windows systems. On Unix it is silently
+    ignored.
+
+    .. versionadded:: 1.33.0
+
+.. c:function:: int uv_tty_get_vterm_state(uv_tty_vtermstate_t* state)
+
+    Get the current state of whether console virtual terminal sequences are
+    handled by libuv or the console.
+
+    This function is not implemented on Unix, where it returns ``UV_ENOTSUP``.
+
+    .. versionadded:: 1.33.0
+

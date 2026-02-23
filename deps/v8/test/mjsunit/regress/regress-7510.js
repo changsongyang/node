@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 function foo(a) {
   for (const x of a) {
@@ -10,10 +10,12 @@ function foo(a) {
   }
 }
 
+%PrepareFunctionForOptimization(foo);
 foo([1]);
 foo([1]);
 %OptimizeFunctionOnNextCall(foo);
 foo([1]);
+%PrepareFunctionForOptimization(foo);
 %OptimizeFunctionOnNextCall(foo);
 foo([1]);
 assertOptimized(foo);

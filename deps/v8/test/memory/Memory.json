@@ -3,10 +3,16 @@
   "name": "Memory",
   "run_count": 5,
   "units": "bytes",
-  "path" : ["."],
-  "binary": "cctest",
-  "main": "test-serialize/SerializationStats",
+  "resources": ["run.js"],
+  "main": "run.js",
+  "path": ["."],
+  "flags": ["--allow-natives-syntax", "--profile-deserialization",
+            "--serialization-statistics"],
   "tests": [
+    {
+      "name": "ReservedMemoryProcess",
+      "results_regexp": "(\\d+) bytes per process$"
+    },
     {
       "name": "ReservedMemoryIsolate",
       "results_regexp": "(\\d+) bytes per isolate$"
@@ -17,15 +23,23 @@
     },
     {
       "name": "SnapshotSizeStartup",
-      "results_regexp": "(\\d+) bytes in \\d+ chunks for startup$"
+      "results_regexp": "(\\d+) bytes for startup$"
     },
     {
-      "name": "SnapshotSizeBuiltins",
-      "results_regexp": "(\\d+) bytes for builtins$"
+      "name": "SnapshotSizeSharedHeap",
+      "results_regexp": "(\\d+) bytes for shared heap$"
+    },
+    {
+      "name": "SnapshotSizeReadOnly",
+      "results_regexp": "(\\d+) bytes for read-only$"
     },
     {
       "name": "SnapshotSizeContext",
-      "results_regexp": "(\\d+) bytes in \\d+ chunks for context #0$"
+      "results_regexp": "(\\d+) bytes for context #0$"
+    },
+    {
+      "name": "DeserializationTimeReadOnly",
+      "results_regexp": "\\[Deserializing read-only space \\(\\d+ bytes\\) took ([\\d.]+) ms\\]"
     },
     {
       "name": "DeserializationTimeIsolate",

@@ -23,15 +23,15 @@ Debug.setListener(listener);
 
 async function f() {
   var a = 1;
-  debugger;          // B0 StepNext
-  a +=               // B1 StepNext
+  debugger;          // B0 StepOver
+  a +=               // B1 StepOver
        await
              5;
-  return a;          // B2 StepNext
-}                    // B3 Continue
+  return a;          // B2 Continue
+}
 
 f();
 
-%RunMicrotasks();
+%PerformMicrotaskCheckpoint();
 
-assertEquals(4, step_count);
+assertEquals(3, step_count);

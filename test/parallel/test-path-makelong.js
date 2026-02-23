@@ -43,6 +43,7 @@ if (common.isWindows) {
                      '\\\\.\\pipe\\somepipe');
 }
 
+assert.strictEqual(path.toNamespacedPath(''), '');
 assert.strictEqual(path.toNamespacedPath(null), null);
 assert.strictEqual(path.toNamespacedPath(100), 100);
 assert.strictEqual(path.toNamespacedPath(path), path);
@@ -60,6 +61,7 @@ assert.strictEqual(path.posix.toNamespacedPath(emptyObj), emptyObj);
 if (common.isWindows) {
   // These tests cause resolve() to insert the cwd, so we cannot test them from
   // non-Windows platforms (easily)
+  assert.strictEqual(path.toNamespacedPath(''), '');
   assert.strictEqual(path.win32.toNamespacedPath('foo\\bar').toLowerCase(),
                      `\\\\?\\${process.cwd().toLowerCase()}\\foo\\bar`);
   assert.strictEqual(path.win32.toNamespacedPath('foo/bar').toLowerCase(),
@@ -78,6 +80,7 @@ assert.strictEqual(path.win32.toNamespacedPath('\\\\foo\\bar'),
 assert.strictEqual(path.win32.toNamespacedPath('//foo//bar'),
                    '\\\\?\\UNC\\foo\\bar\\');
 assert.strictEqual(path.win32.toNamespacedPath('\\\\?\\foo'), '\\\\?\\foo');
+assert.strictEqual(path.win32.toNamespacedPath('\\\\?\\c:\\Windows/System'), '\\\\?\\c:\\Windows\\System');
 assert.strictEqual(path.win32.toNamespacedPath(null), null);
 assert.strictEqual(path.win32.toNamespacedPath(true), true);
 assert.strictEqual(path.win32.toNamespacedPath(1), 1);

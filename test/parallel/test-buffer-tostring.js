@@ -4,14 +4,10 @@ const common = require('../common');
 const assert = require('assert');
 
 // utf8, ucs2, ascii, latin1, utf16le
-const encodings = ['utf8', 'utf-8', 'ucs2', 'ucs-2', 'ascii', 'latin1',
-                   'binary', 'utf16le', 'utf-16le'];
-
-encodings
-  .reduce((es, e) => es.concat(e, e.toUpperCase()), [])
-  .forEach((encoding) => {
-    assert.strictEqual(Buffer.from('foo', encoding).toString(encoding), 'foo');
-  });
+for (const encoding of ['utf8', 'utf-8', 'ucs2', 'ucs-2', 'ascii', 'latin1',
+                        'binary', 'utf16le', 'utf-16le'].flatMap((e) => [e, e.toUpperCase()])) {
+  assert.strictEqual(Buffer.from('foo', encoding).toString(encoding), 'foo');
+}
 
 // base64
 ['base64', 'BASE64'].forEach((encoding) => {
@@ -29,7 +25,7 @@ for (let i = 1; i < 10; i++) {
   const encoding = String(i).repeat(i);
   const error = common.expectsError({
     code: 'ERR_UNKNOWN_ENCODING',
-    type: TypeError,
+    name: 'TypeError',
     message: `Unknown encoding: ${encoding}`
   });
   assert.ok(!Buffer.isEncoding(encoding));

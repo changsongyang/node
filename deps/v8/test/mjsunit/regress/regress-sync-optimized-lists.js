@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --block-concurrent-recompilation
+// Flags: --allow-natives-syntax
 
 function Ctor() {
   this.a = 1;
@@ -19,8 +19,8 @@ function get_closure() {
     return x;
   }
 }
-
 var f1 = get_closure();
+%PrepareFunctionForOptimization(f1);
 f1(new Ctor(), false);
 f1(new Ctor(), false);
 
@@ -28,6 +28,7 @@ f1(new Ctor(), false);
 
 // Kick off concurrent recompilation and OSR.
 var o = new Ctor();
+%PrepareFunctionForOptimization(f1);
 f1(o, true);
 
 // Flush the optimizing compiler's queue.
@@ -37,4 +38,5 @@ f1(o, true);
 o.c = 2.2;
 
 var f2 = get_closure();
+%PrepareFunctionForOptimization(f2);
 f2(new Ctor(), true);

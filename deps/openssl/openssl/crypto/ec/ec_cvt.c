@@ -1,31 +1,25 @@
 /*
- * Copyright 2001-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2001-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
-/* ====================================================================
- * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
- *
- * Portions of the attached software ("Contribution") are developed by
- * SUN MICROSYSTEMS, INC., and are contributed to the OpenSSL project.
- *
- * The Contribution is licensed pursuant to the OpenSSL open source
- * license provided above.
- *
- * The elliptic curve binary polynomial software is originally written by
- * Sheueling Chang Shantz and Douglas Stebila of Sun Microsystems Laboratories.
- *
+/*
+ * ECDSA low level APIs are deprecated for public use, but still ok for
+ * internal use.
  */
+#include "internal/deprecated.h"
 
 #include <openssl/err.h>
-#include "ec_lcl.h"
+#include "crypto/bn.h"
+#include "ec_local.h"
 
 EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p, const BIGNUM *a,
-                                 const BIGNUM *b, BN_CTX *ctx)
+    const BIGNUM *b, BN_CTX *ctx)
 {
     const EC_METHOD *meth;
     EC_GROUP *ret;
@@ -60,12 +54,12 @@ EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p, const BIGNUM *a,
         meth = EC_GFp_mont_method();
 #endif
 
-    ret = EC_GROUP_new(meth);
+    ret = ossl_ec_group_new_ex(ossl_bn_get_libctx(ctx), NULL, meth);
     if (ret == NULL)
         return NULL;
 
-    if (!EC_GROUP_set_curve_GFp(ret, p, a, b, ctx)) {
-        EC_GROUP_clear_free(ret);
+    if (!EC_GROUP_set_curve(ret, p, a, b, ctx)) {
+        EC_GROUP_free(ret);
         return NULL;
     }
 
@@ -74,19 +68,19 @@ EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p, const BIGNUM *a,
 
 #ifndef OPENSSL_NO_EC2M
 EC_GROUP *EC_GROUP_new_curve_GF2m(const BIGNUM *p, const BIGNUM *a,
-                                  const BIGNUM *b, BN_CTX *ctx)
+    const BIGNUM *b, BN_CTX *ctx)
 {
     const EC_METHOD *meth;
     EC_GROUP *ret;
 
     meth = EC_GF2m_simple_method();
 
-    ret = EC_GROUP_new(meth);
+    ret = ossl_ec_group_new_ex(ossl_bn_get_libctx(ctx), NULL, meth);
     if (ret == NULL)
         return NULL;
 
-    if (!EC_GROUP_set_curve_GF2m(ret, p, a, b, ctx)) {
-        EC_GROUP_clear_free(ret);
+    if (!EC_GROUP_set_curve(ret, p, a, b, ctx)) {
+        EC_GROUP_free(ret);
         return NULL;
     }
 

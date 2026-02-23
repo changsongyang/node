@@ -17,9 +17,10 @@ namespace platform {
 namespace {
 
 struct MockTask : public Task {
-  virtual ~MockTask() { Die(); }
-  MOCK_METHOD0(Run, void());
-  MOCK_METHOD0(Die, void());
+  // See issue v8:8185
+  ~MockTask() /* override */ { Die(); }
+  MOCK_METHOD(void, Run, (), (override));
+  MOCK_METHOD(void, Die, ());
 };
 
 }  // namespace

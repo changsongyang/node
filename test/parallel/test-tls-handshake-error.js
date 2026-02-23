@@ -14,12 +14,11 @@ const server = tls.createServer({
   key: fixtures.readKey('agent1-key.pem'),
   cert: fixtures.readKey('agent1-cert.pem'),
   rejectUnauthorized: true
-}, function(c) {
-}).listen(0, common.mustCall(function() {
+}, common.mustNotCall()).listen(0, common.mustCall(function() {
   assert.throws(() => {
     tls.connect({
       port: this.address().port,
-      ciphers: 'RC4'
+      ciphers: 'no-such-cipher'
     }, common.mustNotCall());
   }, /no cipher match/i);
 

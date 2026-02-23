@@ -6,6 +6,7 @@
 .type	aesni_multi_cbc_encrypt,@function
 .align	32
 aesni_multi_cbc_encrypt:
+.cfi_startproc	
 	cmpl	$2,%edx
 	jb	.Lenc_non_avx
 	movl	OPENSSL_ia32cap_P+4(%rip),%ecx
@@ -15,12 +16,19 @@ aesni_multi_cbc_encrypt:
 .align	16
 .Lenc_non_avx:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
 
@@ -30,6 +38,7 @@ aesni_multi_cbc_encrypt:
 	subq	$48,%rsp
 	andq	$-64,%rsp
 	movq	%rax,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x08
 
 .Lenc4x_body:
 	movdqu	(%rsi),%xmm12
@@ -39,39 +48,47 @@ aesni_multi_cbc_encrypt:
 .Lenc4x_loop_grande:
 	movl	%edx,24(%rsp)
 	xorl	%edx,%edx
+
 	movl	-64(%rdi),%ecx
 	movq	-80(%rdi),%r8
 	cmpl	%edx,%ecx
 	movq	-72(%rdi),%r12
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	-56(%rdi),%xmm2
 	movl	%ecx,32(%rsp)
 	cmovleq	%rsp,%r8
+
 	movl	-24(%rdi),%ecx
 	movq	-40(%rdi),%r9
 	cmpl	%edx,%ecx
 	movq	-32(%rdi),%r13
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	-16(%rdi),%xmm3
 	movl	%ecx,36(%rsp)
 	cmovleq	%rsp,%r9
+
 	movl	16(%rdi),%ecx
 	movq	0(%rdi),%r10
 	cmpl	%edx,%ecx
 	movq	8(%rdi),%r14
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	24(%rdi),%xmm4
 	movl	%ecx,40(%rsp)
 	cmovleq	%rsp,%r10
+
 	movl	56(%rdi),%ecx
 	movq	40(%rdi),%r11
 	cmpl	%edx,%ecx
 	movq	48(%rdi),%r15
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	64(%rdi),%xmm5
 	movl	%ecx,44(%rsp)
 	cmovleq	%rsp,%r11
@@ -239,7 +256,9 @@ aesni_multi_cbc_encrypt:
 	jnz	.Loop_enc4x
 
 	movq	16(%rsp),%rax
+.cfi_def_cfa	%rax,8
 	movl	24(%rsp),%edx
+
 
 
 
@@ -256,20 +275,29 @@ aesni_multi_cbc_encrypt:
 
 .Lenc4x_done:
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lenc4x_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_multi_cbc_encrypt,.-aesni_multi_cbc_encrypt
 
 .globl	aesni_multi_cbc_decrypt
 .type	aesni_multi_cbc_decrypt,@function
 .align	32
 aesni_multi_cbc_decrypt:
+.cfi_startproc	
 	cmpl	$2,%edx
 	jb	.Ldec_non_avx
 	movl	OPENSSL_ia32cap_P+4(%rip),%ecx
@@ -279,12 +307,19 @@ aesni_multi_cbc_decrypt:
 .align	16
 .Ldec_non_avx:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
 
@@ -294,6 +329,7 @@ aesni_multi_cbc_decrypt:
 	subq	$48,%rsp
 	andq	$-64,%rsp
 	movq	%rax,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x08
 
 .Ldec4x_body:
 	movdqu	(%rsi),%xmm12
@@ -303,39 +339,47 @@ aesni_multi_cbc_decrypt:
 .Ldec4x_loop_grande:
 	movl	%edx,24(%rsp)
 	xorl	%edx,%edx
+
 	movl	-64(%rdi),%ecx
 	movq	-80(%rdi),%r8
 	cmpl	%edx,%ecx
 	movq	-72(%rdi),%r12
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	-56(%rdi),%xmm6
 	movl	%ecx,32(%rsp)
 	cmovleq	%rsp,%r8
+
 	movl	-24(%rdi),%ecx
 	movq	-40(%rdi),%r9
 	cmpl	%edx,%ecx
 	movq	-32(%rdi),%r13
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	-16(%rdi),%xmm7
 	movl	%ecx,36(%rsp)
 	cmovleq	%rsp,%r9
+
 	movl	16(%rdi),%ecx
 	movq	0(%rdi),%r10
 	cmpl	%edx,%ecx
 	movq	8(%rdi),%r14
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	24(%rdi),%xmm8
 	movl	%ecx,40(%rsp)
 	cmovleq	%rsp,%r10
+
 	movl	56(%rdi),%ecx
 	movq	40(%rdi),%r11
 	cmpl	%edx,%ecx
 	movq	48(%rdi),%r15
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	movdqu	64(%rdi),%xmm9
 	movl	%ecx,44(%rsp)
 	cmovleq	%rsp,%r11
@@ -503,6 +547,7 @@ aesni_multi_cbc_decrypt:
 	jnz	.Loop_dec4x
 
 	movq	16(%rsp),%rax
+.cfi_def_cfa	%rax,8
 	movl	24(%rsp),%edx
 
 	leaq	160(%rdi),%rdi
@@ -511,26 +556,42 @@ aesni_multi_cbc_decrypt:
 
 .Ldec4x_done:
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Ldec4x_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_multi_cbc_decrypt,.-aesni_multi_cbc_decrypt
 .type	aesni_multi_cbc_encrypt_avx,@function
 .align	32
 aesni_multi_cbc_encrypt_avx:
+.cfi_startproc	
 _avx_cbc_enc_shortcut:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
 
@@ -542,6 +603,7 @@ _avx_cbc_enc_shortcut:
 	subq	$192,%rsp
 	andq	$-128,%rsp
 	movq	%rax,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x08
 
 .Lenc8x_body:
 	vzeroupper
@@ -553,89 +615,121 @@ _avx_cbc_enc_shortcut:
 .Lenc8x_loop_grande:
 
 	xorl	%edx,%edx
+
 	movl	-144(%rdi),%ecx
+
 	movq	-160(%rdi),%r8
 	cmpl	%edx,%ecx
+
 	movq	-152(%rdi),%rbx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-136(%rdi),%xmm2
 	movl	%ecx,32(%rsp)
 	cmovleq	%rsp,%r8
 	subq	%r8,%rbx
 	movq	%rbx,64(%rsp)
+
 	movl	-104(%rdi),%ecx
+
 	movq	-120(%rdi),%r9
 	cmpl	%edx,%ecx
+
 	movq	-112(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-96(%rdi),%xmm3
 	movl	%ecx,36(%rsp)
 	cmovleq	%rsp,%r9
 	subq	%r9,%rbp
 	movq	%rbp,72(%rsp)
+
 	movl	-64(%rdi),%ecx
+
 	movq	-80(%rdi),%r10
 	cmpl	%edx,%ecx
+
 	movq	-72(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-56(%rdi),%xmm4
 	movl	%ecx,40(%rsp)
 	cmovleq	%rsp,%r10
 	subq	%r10,%rbp
 	movq	%rbp,80(%rsp)
+
 	movl	-24(%rdi),%ecx
+
 	movq	-40(%rdi),%r11
 	cmpl	%edx,%ecx
+
 	movq	-32(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-16(%rdi),%xmm5
 	movl	%ecx,44(%rsp)
 	cmovleq	%rsp,%r11
 	subq	%r11,%rbp
 	movq	%rbp,88(%rsp)
+
 	movl	16(%rdi),%ecx
+
 	movq	0(%rdi),%r12
 	cmpl	%edx,%ecx
+
 	movq	8(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	24(%rdi),%xmm6
 	movl	%ecx,48(%rsp)
 	cmovleq	%rsp,%r12
 	subq	%r12,%rbp
 	movq	%rbp,96(%rsp)
+
 	movl	56(%rdi),%ecx
+
 	movq	40(%rdi),%r13
 	cmpl	%edx,%ecx
+
 	movq	48(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	64(%rdi),%xmm7
 	movl	%ecx,52(%rsp)
 	cmovleq	%rsp,%r13
 	subq	%r13,%rbp
 	movq	%rbp,104(%rsp)
+
 	movl	96(%rdi),%ecx
+
 	movq	80(%rdi),%r14
 	cmpl	%edx,%ecx
+
 	movq	88(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	104(%rdi),%xmm8
 	movl	%ecx,56(%rsp)
 	cmovleq	%rsp,%r14
 	subq	%r14,%rbp
 	movq	%rbp,112(%rsp)
+
 	movl	136(%rdi),%ecx
+
 	movq	120(%rdi),%r15
 	cmpl	%edx,%ecx
+
 	movq	128(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	144(%rdi),%xmm9
 	movl	%ecx,60(%rsp)
 	cmovleq	%rsp,%r15
@@ -939,6 +1033,7 @@ _avx_cbc_enc_shortcut:
 	jnz	.Loop_enc8x
 
 	movq	16(%rsp),%rax
+.cfi_def_cfa	%rax,8
 
 
 
@@ -947,27 +1042,43 @@ _avx_cbc_enc_shortcut:
 .Lenc8x_done:
 	vzeroupper
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Lenc8x_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_multi_cbc_encrypt_avx,.-aesni_multi_cbc_encrypt_avx
 
 .type	aesni_multi_cbc_decrypt_avx,@function
 .align	32
 aesni_multi_cbc_decrypt_avx:
+.cfi_startproc	
 _avx_cbc_dec_shortcut:
 	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
 
@@ -981,6 +1092,7 @@ _avx_cbc_dec_shortcut:
 	andq	$-256,%rsp
 	subq	$192,%rsp
 	movq	%rax,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x08
 
 .Ldec8x_body:
 	vzeroupper
@@ -992,96 +1104,128 @@ _avx_cbc_dec_shortcut:
 .Ldec8x_loop_grande:
 
 	xorl	%edx,%edx
+
 	movl	-144(%rdi),%ecx
+
 	movq	-160(%rdi),%r8
 	cmpl	%edx,%ecx
+
 	movq	-152(%rdi),%rbx
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-136(%rdi),%xmm2
 	movl	%ecx,32(%rsp)
 	cmovleq	%rsp,%r8
 	subq	%r8,%rbx
 	movq	%rbx,64(%rsp)
 	vmovdqu	%xmm2,192(%rsp)
+
 	movl	-104(%rdi),%ecx
+
 	movq	-120(%rdi),%r9
 	cmpl	%edx,%ecx
+
 	movq	-112(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-96(%rdi),%xmm3
 	movl	%ecx,36(%rsp)
 	cmovleq	%rsp,%r9
 	subq	%r9,%rbp
 	movq	%rbp,72(%rsp)
 	vmovdqu	%xmm3,208(%rsp)
+
 	movl	-64(%rdi),%ecx
+
 	movq	-80(%rdi),%r10
 	cmpl	%edx,%ecx
+
 	movq	-72(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-56(%rdi),%xmm4
 	movl	%ecx,40(%rsp)
 	cmovleq	%rsp,%r10
 	subq	%r10,%rbp
 	movq	%rbp,80(%rsp)
 	vmovdqu	%xmm4,224(%rsp)
+
 	movl	-24(%rdi),%ecx
+
 	movq	-40(%rdi),%r11
 	cmpl	%edx,%ecx
+
 	movq	-32(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	-16(%rdi),%xmm5
 	movl	%ecx,44(%rsp)
 	cmovleq	%rsp,%r11
 	subq	%r11,%rbp
 	movq	%rbp,88(%rsp)
 	vmovdqu	%xmm5,240(%rsp)
+
 	movl	16(%rdi),%ecx
+
 	movq	0(%rdi),%r12
 	cmpl	%edx,%ecx
+
 	movq	8(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	24(%rdi),%xmm6
 	movl	%ecx,48(%rsp)
 	cmovleq	%rsp,%r12
 	subq	%r12,%rbp
 	movq	%rbp,96(%rsp)
 	vmovdqu	%xmm6,256(%rsp)
+
 	movl	56(%rdi),%ecx
+
 	movq	40(%rdi),%r13
 	cmpl	%edx,%ecx
+
 	movq	48(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	64(%rdi),%xmm7
 	movl	%ecx,52(%rsp)
 	cmovleq	%rsp,%r13
 	subq	%r13,%rbp
 	movq	%rbp,104(%rsp)
 	vmovdqu	%xmm7,272(%rsp)
+
 	movl	96(%rdi),%ecx
+
 	movq	80(%rdi),%r14
 	cmpl	%edx,%ecx
+
 	movq	88(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	104(%rdi),%xmm8
 	movl	%ecx,56(%rsp)
 	cmovleq	%rsp,%r14
 	subq	%r14,%rbp
 	movq	%rbp,112(%rsp)
 	vmovdqu	%xmm8,288(%rsp)
+
 	movl	136(%rdi),%ecx
+
 	movq	120(%rdi),%r15
 	cmpl	%edx,%ecx
+
 	movq	128(%rdi),%rbp
 	cmovgl	%ecx,%edx
 	testl	%ecx,%ecx
+
 	vmovdqu	144(%rdi),%xmm9
 	movl	%ecx,60(%rsp)
 	cmovleq	%rsp,%r15
@@ -1416,6 +1560,7 @@ _avx_cbc_dec_shortcut:
 	jnz	.Loop_dec8x
 
 	movq	16(%rsp),%rax
+.cfi_def_cfa	%rax,8
 
 
 
@@ -1424,12 +1569,41 @@ _avx_cbc_dec_shortcut:
 .Ldec8x_done:
 	vzeroupper
 	movq	-48(%rax),%r15
+.cfi_restore	%r15
 	movq	-40(%rax),%r14
+.cfi_restore	%r14
 	movq	-32(%rax),%r13
+.cfi_restore	%r13
 	movq	-24(%rax),%r12
+.cfi_restore	%r12
 	movq	-16(%rax),%rbp
+.cfi_restore	%rbp
 	movq	-8(%rax),%rbx
+.cfi_restore	%rbx
 	leaq	(%rax),%rsp
+.cfi_def_cfa_register	%rsp
 .Ldec8x_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	aesni_multi_cbc_decrypt_avx,.-aesni_multi_cbc_decrypt_avx
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

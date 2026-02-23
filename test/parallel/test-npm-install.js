@@ -2,6 +2,8 @@
 const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
+if (common.isInsideDirWithUnusualChars)
+  common.skip('npm does not support this install path');
 
 const path = require('path');
 const exec = require('child_process').exec;
@@ -11,9 +13,11 @@ const fixtures = require('../common/fixtures');
 
 const tmpdir = require('../common/tmpdir');
 tmpdir.refresh();
-const npmSandbox = path.join(tmpdir.path, 'npm-sandbox');
+const npmSandbox = tmpdir.resolve('npm-sandbox');
 fs.mkdirSync(npmSandbox);
-const installDir = path.join(tmpdir.path, 'install-dir');
+const homeDir = tmpdir.resolve('home');
+fs.mkdirSync(homeDir);
+const installDir = tmpdir.resolve('install-dir');
 fs.mkdirSync(installDir);
 
 const npmPath = path.join(
@@ -36,14 +40,17 @@ const pkgPath = path.join(installDir, 'package.json');
 
 fs.writeFileSync(pkgPath, pkgContent);
 
-const env = Object.assign({}, process.env, {
-  PATH: path.dirname(process.execPath),
-  NPM_CONFIG_PREFIX: path.join(npmSandbox, 'npm-prefix'),
-  NPM_CONFIG_TMP: path.join(npmSandbox, 'npm-tmp'),
-  HOME: path.join(npmSandbox, 'home'),
-});
+const env = { ...process.env,
+              PATH: path.dirname(process.execPath),
+              NODE: process.execPath,
+              NPM: npmPath,
+              NPM_CONFIG_PREFIX: path.join(npmSandbox, 'npm-prefix'),
+              NPM_CONFIG_TMP: path.join(npmSandbox, 'npm-tmp'),
+              NPM_CONFIG_AUDIT: false,
+              NPM_CONFIG_UPDATE_NOTIFIER: false,
+              HOME: homeDir };
 
-exec(`${process.execPath} ${npmPath} install`, {
+exec(`"${common.isWindows ? process.execPath : '$NODE'}" "${common.isWindows ? npmPath : '$NPM'}" install`, {
   cwd: installDir,
   env: env
 }, common.mustCall(handleExit));

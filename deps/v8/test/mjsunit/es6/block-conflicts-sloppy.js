@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // Test for conflicting variable bindings.
+// Stress-testing this test is very slow and provides no useful coverage.
 
 function CheckException(e) {
   var string = e.toString();

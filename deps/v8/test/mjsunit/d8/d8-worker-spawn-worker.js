@@ -27,14 +27,14 @@
 
 if (this.Worker) {
   var workerScript =
-    `var w = new Worker('postMessage(42)');
-     onmessage = function(parentMsg) {
+    `var w = new Worker('postMessage(42)', {type: 'string'});
+     onmessage = function({data:parentMsg}) {
        w.postMessage(parentMsg);
        var childMsg = w.getMessage();
        postMessage(childMsg);
      };`;
 
-  var w = new Worker(workerScript);
+  var w = new Worker(workerScript, {type: 'string'});
   w.postMessage(9);
   assertEquals(42, w.getMessage());
 }

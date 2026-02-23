@@ -5,9 +5,11 @@
 #ifndef V8_COMPILER_JS_CREATE_LOWERING_H_
 #define V8_COMPILER_JS_CREATE_LOWERING_H_
 
+#include <optional>
+
 #include "src/base/compiler-specific.h"
+#include "src/common/globals.h"
 #include "src/compiler/graph-reducer.h"
-#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -22,26 +24,25 @@ namespace compiler {
 // Forward declarations.
 class CommonOperatorBuilder;
 class CompilationDependencies;
+class FrameState;
 class JSGraph;
 class JSOperatorBuilder;
 class MachineOperatorBuilder;
 class SimplifiedOperatorBuilder;
 class SlackTrackingPrediction;
+struct FeedbackSource;
 
 // Lowers JSCreate-level operators to fast (inline) allocations.
 class V8_EXPORT_PRIVATE JSCreateLowering final
     : public NON_EXPORTED_BASE(AdvancedReducer) {
  public:
-  JSCreateLowering(Editor* editor, CompilationDependencies* dependencies,
-                   JSGraph* jsgraph, JSHeapBroker* js_heap_broker,
-                   Handle<Context> native_context, Zone* zone)
+  JSCreateLowering(Editor* editor, JSGraph* jsgraph, JSHeapBroker* broker,
+                   Zone* zone)
       : AdvancedReducer(editor),
-        dependencies_(dependencies),
         jsgraph_(jsgraph),
-        js_heap_broker_(js_heap_broker),
-        native_context_(native_context),
+        broker_(broker),
         zone_(zone) {}
-  ~JSCreateLowering() final {}
+  ~JSCreateLowering() final = default;
 
   const char* reducer_name() const override { return "JSCreateLowering"; }
 
@@ -52,6 +53,7 @@ class V8_EXPORT_PRIVATE JSCreateLowering final
   Reduction ReduceJSCreateArguments(Node* node);
   Reduction ReduceJSCreateArray(Node* node);
   Reduction ReduceJSCreateArrayIterator(Node* node);
+  Reduction ReduceJSCreateAsyncFunctionObject(Node* node);
   Reduction ReduceJSCreateCollectionIterator(Node* node);
   Reduction ReduceJSCreateBoundFunction(Node* node);
   Reduction ReduceJSCreateClosure(Node* node);
@@ -68,66 +70,72 @@ class V8_EXPORT_PRIVATE JSCreateLowering final
   Reduction ReduceJSCreateCatchContext(Node* node);
   Reduction ReduceJSCreateBlockContext(Node* node);
   Reduction ReduceJSCreateGeneratorObject(Node* node);
+  Reduction ReduceJSGetTemplateObject(Node* node);
   Reduction ReduceNewArray(
-      Node* node, Node* length, MapRef initial_map, PretenureFlag pretenure,
-      const SlackTrackingPrediction& slack_tracking_prediction);
+      Node* node, Node* length, MapRef initial_map, ElementsKind elements_kind,
+      AllocationType allocation,
+      const SlackTrackingPrediction& slack_tracking_prediction,
+      const FeedbackSource& feedback);
   Reduction ReduceNewArray(
       Node* node, Node* length, int capacity, MapRef initial_map,
-      PretenureFlag pretenure,
-      const SlackTrackingPrediction& slack_tracking_prediction);
+      ElementsKind elements_kind, AllocationType allocation,
+      const SlackTrackingPrediction& slack_tracking_prediction,
+      const FeedbackSource& feedback);
   Reduction ReduceNewArray(
       Node* node, std::vector<Node*> values, MapRef initial_map,
-      PretenureFlag pretenure,
-      const SlackTrackingPrediction& slack_tracking_prediction);
+      ElementsKind elements_kind, AllocationType allocation,
+      const SlackTrackingPrediction& slack_tracking_prediction,
+      const FeedbackSource& feedback);
   Reduction ReduceJSCreateObject(Node* node);
+  Reduction ReduceJSCreateStringWrapper(Node* node);
 
-  Node* AllocateArguments(Node* effect, Node* control, Node* frame_state);
-  Node* AllocateRestArguments(Node* effect, Node* control, Node* frame_state,
-                              int start_index);
-  Node* AllocateAliasedArguments(Node* effect, Node* control, Node* frame_state,
-                                 Node* context,
-                                 const SharedFunctionInfoRef& shared,
-                                 bool* has_aliased_arguments);
-  Node* AllocateAliasedArguments(Node* effect, Node* control, Node* context,
-                                 Node* arguments_frame, Node* arguments_length,
-                                 const SharedFunctionInfoRef& shared,
-                                 bool* has_aliased_arguments);
+  // The following functions all return nullptr iff there are too many arguments
+  // for inline allocation.
+  Node* TryAllocateArguments(Node* effect, Node* control,
+                             FrameState frame_state);
+  Node* TryAllocateRestArguments(Node* effect, Node* control,
+                                 FrameState frame_state, int start_index);
+  Node* TryAllocateAliasedArguments(Node* effect, Node* control,
+                                    FrameState frame_state, Node* context,
+                                    SharedFunctionInfoRef shared,
+                                    bool* has_aliased_arguments);
+  Node* TryAllocateAliasedArguments(Node* effect, Node* control, Node* context,
+                                    Node* arguments_length,
+                                    SharedFunctionInfoRef shared,
+                                    bool* has_aliased_arguments);
+  std::optional<Node*> TryAllocateFastLiteral(Node* effect, Node* control,
+                                              JSObjectRef boilerplate,
+                                              AllocationType allocation,
+                                              int max_depth,
+                                              int* max_properties);
+  std::optional<Node*> TryAllocateFastLiteralElements(
+      Node* effect, Node* control, JSObjectRef boilerplate,
+      AllocationType allocation, int max_depth, int* max_properties);
+
   Node* AllocateElements(Node* effect, Node* control,
                          ElementsKind elements_kind, int capacity,
-                         PretenureFlag pretenure);
+                         AllocationType allocation);
   Node* AllocateElements(Node* effect, Node* control,
                          ElementsKind elements_kind, Node* capacity_and_length);
   Node* AllocateElements(Node* effect, Node* control,
                          ElementsKind elements_kind,
                          std::vector<Node*> const& values,
-                         PretenureFlag pretenure);
-  Node* AllocateFastLiteral(Node* effect, Node* control,
-                            JSObjectRef boilerplate, PretenureFlag pretenure);
-  Node* AllocateFastLiteralElements(Node* effect, Node* control,
-                                    JSObjectRef boilerplate,
-                                    PretenureFlag pretenure);
+                         AllocationType allocation);
   Node* AllocateLiteralRegExp(Node* effect, Node* control,
-                              JSRegExpRef boilerplate);
-
-  Reduction ReduceNewArrayToStubCall(Node* node,
-                                     base::Optional<AllocationSiteRef> site);
+                              RegExpBoilerplateDescriptionRef boilerplate);
 
   Factory* factory() const;
-  Graph* graph() const;
+  TFGraph* graph() const;
   JSGraph* jsgraph() const { return jsgraph_; }
-  Isolate* isolate() const;
-  Handle<Context> native_context() const { return native_context_; }
-  NativeContextRef native_context_ref() const;
+  NativeContextRef native_context() const;
   CommonOperatorBuilder* common() const;
   SimplifiedOperatorBuilder* simplified() const;
-  CompilationDependencies* dependencies() const { return dependencies_; }
-  JSHeapBroker* js_heap_broker() const { return js_heap_broker_; }
+  CompilationDependencies* dependencies() const;
+  JSHeapBroker* broker() const { return broker_; }
   Zone* zone() const { return zone_; }
 
-  CompilationDependencies* const dependencies_;
   JSGraph* const jsgraph_;
-  JSHeapBroker* const js_heap_broker_;
-  Handle<Context> const native_context_;
+  JSHeapBroker* const broker_;
   Zone* const zone_;
 };
 

@@ -1,7 +1,8 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2017 ngtcp2 contributors
+ * Copyright (c) 2012 nghttp2 contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -25,165 +26,289 @@
 #include "nghttp2_map.h"
 
 #include <string.h>
+#include <assert.h>
+#include <stdio.h>
 
-#define INITIAL_TABLE_LENGTH 256
+#include "nghttp2_helper.h"
 
-int nghttp2_map_init(nghttp2_map *map, nghttp2_mem *mem) {
+#define NGHTTP2_INITIAL_HASHBITS 4
+
+void nghttp2_map_init(nghttp2_map *map, uint32_t seed, nghttp2_mem *mem) {
   map->mem = mem;
-  map->tablelen = INITIAL_TABLE_LENGTH;
-  map->table =
-      nghttp2_mem_calloc(mem, map->tablelen, sizeof(nghttp2_map_entry *));
-  if (map->table == NULL) {
-    return NGHTTP2_ERR_NOMEM;
+  map->hashbits = 0;
+  map->table = NULL;
+  map->seed = seed;
+  map->size = 0;
+}
+
+void nghttp2_map_free(nghttp2_map *map) {
+  if (!map) {
+    return;
   }
 
-  map->size = 0;
+  nghttp2_mem_free(map->mem, map->table);
+}
+
+int nghttp2_map_each(const nghttp2_map *map, int (*func)(void *data, void *ptr),
+                     void *ptr) {
+  int rv;
+  size_t i;
+  nghttp2_map_bucket *bkt;
+  size_t tablelen;
+
+  if (map->size == 0) {
+    return 0;
+  }
+
+  tablelen = 1u << map->hashbits;
+
+  for (i = 0; i < tablelen; ++i) {
+    bkt = &map->table[i];
+
+    if (bkt->data == NULL) {
+      continue;
+    }
+
+    rv = func(bkt->data, ptr);
+    if (rv != 0) {
+      return rv;
+    }
+  }
 
   return 0;
 }
 
-void nghttp2_map_free(nghttp2_map *map) {
-  nghttp2_mem_free(map->mem, map->table);
+static size_t map_hash(const nghttp2_map *map, nghttp2_map_key_type key) {
+  /* hasher from
+     https://github.com/rust-lang/rustc-hash/blob/dc5c33f1283de2da64d8d7a06401d91aded03ad4/src/lib.rs
+     We do not perform finalization here because we use top bits
+     anyway. */
+  uint32_t h = ((uint32_t)key + map->seed) * 0x93d765dd;
+  return (size_t)((h * 2654435769u) >> (32 - map->hashbits));
 }
 
-void nghttp2_map_each_free(nghttp2_map *map,
-                           int (*func)(nghttp2_map_entry *entry, void *ptr),
-                           void *ptr) {
-  uint32_t i;
-  for (i = 0; i < map->tablelen; ++i) {
-    nghttp2_map_entry *entry;
-    for (entry = map->table[i]; entry;) {
-      nghttp2_map_entry *next = entry->next;
-      func(entry, ptr);
-      entry = next;
+static void map_bucket_swap(nghttp2_map_bucket *a, nghttp2_map_bucket *b) {
+  nghttp2_map_bucket c = *a;
+
+  *a = *b;
+  *b = c;
+}
+
+#ifndef WIN32
+void nghttp2_map_print_distance(const nghttp2_map *map) {
+  size_t i;
+  size_t idx;
+  nghttp2_map_bucket *bkt;
+  size_t tablelen;
+
+  if (map->size == 0) {
+    return;
+  }
+
+  tablelen = 1u << map->hashbits;
+
+  for (i = 0; i < tablelen; ++i) {
+    bkt = &map->table[i];
+
+    if (bkt->data == NULL) {
+      fprintf(stderr, "@%zu <EMPTY>\n", i);
+      continue;
     }
-    map->table[i] = NULL;
+
+    idx = map_hash(map, bkt->key);
+    fprintf(stderr, "@%zu hash=%zu key=%d base=%zu distance=%u\n", i,
+            map_hash(map, bkt->key), bkt->key, idx, bkt->psl);
+  }
+}
+#endif /* !defined(WIN32) */
+
+static int map_insert(nghttp2_map *map, nghttp2_map_key_type key, void *data) {
+  size_t idx = map_hash(map, key);
+  nghttp2_map_bucket b = {
+    .key = key,
+    .data = data,
+  };
+  nghttp2_map_bucket *bkt;
+  size_t mask = (1u << map->hashbits) - 1;
+
+  for (;;) {
+    bkt = &map->table[idx];
+
+    if (bkt->data == NULL) {
+      *bkt = b;
+      ++map->size;
+      return 0;
+    }
+
+    if (b.psl > bkt->psl) {
+      map_bucket_swap(bkt, &b);
+    } else if (bkt->key == key) {
+      /* TODO This check is just a waste after first swap or if this
+         function is called from map_resize.  That said, there is no
+         difference with or without this conditional in performance
+         wise. */
+      return NGHTTP2_ERR_INVALID_ARGUMENT;
+    }
+
+    ++b.psl;
+    idx = (idx + 1) & mask;
   }
 }
 
-int nghttp2_map_each(nghttp2_map *map,
-                     int (*func)(nghttp2_map_entry *entry, void *ptr),
-                     void *ptr) {
+static int map_resize(nghttp2_map *map, size_t new_hashbits) {
+  size_t i;
+  nghttp2_map_bucket *bkt;
+  size_t tablelen;
   int rv;
-  uint32_t i;
-  for (i = 0; i < map->tablelen; ++i) {
-    nghttp2_map_entry *entry;
-    for (entry = map->table[i]; entry; entry = entry->next) {
-      rv = func(entry, ptr);
+  nghttp2_map new_map = {
+    .table = nghttp2_mem_calloc(map->mem, 1u << new_hashbits,
+                                sizeof(nghttp2_map_bucket)),
+    .mem = map->mem,
+    .seed = map->seed,
+    .hashbits = new_hashbits,
+  };
+  (void)rv;
+
+  if (new_map.table == NULL) {
+    return NGHTTP2_ERR_NOMEM;
+  }
+
+  if (map->size) {
+    tablelen = 1u << map->hashbits;
+
+    for (i = 0; i < tablelen; ++i) {
+      bkt = &map->table[i];
+      if (bkt->data == NULL) {
+        continue;
+      }
+
+      rv = map_insert(&new_map, bkt->key, bkt->data);
+
+      assert(0 == rv);
+    }
+  }
+
+  nghttp2_mem_free(map->mem, map->table);
+  map->table = new_map.table;
+  map->hashbits = new_hashbits;
+
+  return 0;
+}
+
+int nghttp2_map_insert(nghttp2_map *map, nghttp2_map_key_type key, void *data) {
+  int rv;
+
+  assert(data);
+
+  /* Load factor is 7/8 */
+  /* Under the very initial condition, that is map->size == 0 and
+     map->hashbits == 0, 8 > 7 still holds nicely. */
+  if ((map->size + 1) * 8 > (1u << map->hashbits) * 7) {
+    if (map->hashbits) {
+      rv = map_resize(map, map->hashbits + 1);
+      if (rv != 0) {
+        return rv;
+      }
+    } else {
+      rv = map_resize(map, NGHTTP2_INITIAL_HASHBITS);
       if (rv != 0) {
         return rv;
       }
     }
   }
-  return 0;
-}
 
-void nghttp2_map_entry_init(nghttp2_map_entry *entry, key_type key) {
-  entry->key = key;
-  entry->next = NULL;
-}
-
-/* Same hash function in android HashMap source code. */
-/* The |mod| must be power of 2 */
-static uint32_t hash(int32_t key, uint32_t mod) {
-  uint32_t h = (uint32_t)key;
-  h ^= (h >> 20) ^ (h >> 12);
-  h ^= (h >> 7) ^ (h >> 4);
-  return h & (mod - 1);
-}
-
-static int insert(nghttp2_map_entry **table, uint32_t tablelen,
-                  nghttp2_map_entry *entry) {
-  uint32_t h = hash(entry->key, tablelen);
-  if (table[h] == NULL) {
-    table[h] = entry;
-  } else {
-    nghttp2_map_entry *p;
-    /* We won't allow duplicated key, so check it out. */
-    for (p = table[h]; p; p = p->next) {
-      if (p->key == entry->key) {
-        return NGHTTP2_ERR_INVALID_ARGUMENT;
-      }
-    }
-    entry->next = table[h];
-    table[h] = entry;
-  }
-  return 0;
-}
-
-/* new_tablelen must be power of 2 */
-static int resize(nghttp2_map *map, uint32_t new_tablelen) {
-  uint32_t i;
-  nghttp2_map_entry **new_table;
-
-  new_table =
-      nghttp2_mem_calloc(map->mem, new_tablelen, sizeof(nghttp2_map_entry *));
-  if (new_table == NULL) {
-    return NGHTTP2_ERR_NOMEM;
-  }
-
-  for (i = 0; i < map->tablelen; ++i) {
-    nghttp2_map_entry *entry;
-    for (entry = map->table[i]; entry;) {
-      nghttp2_map_entry *next = entry->next;
-      entry->next = NULL;
-      /* This function must succeed */
-      insert(new_table, new_tablelen, entry);
-      entry = next;
-    }
-  }
-  nghttp2_mem_free(map->mem, map->table);
-  map->tablelen = new_tablelen;
-  map->table = new_table;
-
-  return 0;
-}
-
-int nghttp2_map_insert(nghttp2_map *map, nghttp2_map_entry *new_entry) {
-  int rv;
-  /* Load factor is 0.75 */
-  if ((map->size + 1) * 4 > map->tablelen * 3) {
-    rv = resize(map, map->tablelen * 2);
-    if (rv != 0) {
-      return rv;
-    }
-  }
-  rv = insert(map->table, map->tablelen, new_entry);
+  rv = map_insert(map, key, data);
   if (rv != 0) {
     return rv;
   }
-  ++map->size;
+
   return 0;
 }
 
-nghttp2_map_entry *nghttp2_map_find(nghttp2_map *map, key_type key) {
-  uint32_t h;
-  nghttp2_map_entry *entry;
-  h = hash(key, map->tablelen);
-  for (entry = map->table[h]; entry; entry = entry->next) {
-    if (entry->key == key) {
-      return entry;
-    }
+void *nghttp2_map_find(const nghttp2_map *map, nghttp2_map_key_type key) {
+  size_t idx;
+  nghttp2_map_bucket *bkt;
+  size_t psl = 0;
+  size_t mask;
+
+  if (map->size == 0) {
+    return NULL;
   }
-  return NULL;
-}
 
-int nghttp2_map_remove(nghttp2_map *map, key_type key) {
-  uint32_t h;
-  nghttp2_map_entry **dst;
+  idx = map_hash(map, key);
+  mask = (1u << map->hashbits) - 1;
 
-  h = hash(key, map->tablelen);
+  for (;;) {
+    bkt = &map->table[idx];
 
-  for (dst = &map->table[h]; *dst; dst = &(*dst)->next) {
-    if ((*dst)->key != key) {
-      continue;
+    if (bkt->data == NULL || psl > bkt->psl) {
+      return NULL;
     }
 
-    *dst = (*dst)->next;
-    --map->size;
-    return 0;
+    if (bkt->key == key) {
+      return bkt->data;
+    }
+
+    ++psl;
+    idx = (idx + 1) & mask;
   }
-  return NGHTTP2_ERR_INVALID_ARGUMENT;
 }
 
-size_t nghttp2_map_size(nghttp2_map *map) { return map->size; }
+int nghttp2_map_remove(nghttp2_map *map, nghttp2_map_key_type key) {
+  size_t idx;
+  nghttp2_map_bucket *b, *bkt;
+  size_t psl = 0;
+  size_t mask;
+
+  if (map->size == 0) {
+    return NGHTTP2_ERR_INVALID_ARGUMENT;
+  }
+
+  idx = map_hash(map, key);
+  mask = (1u << map->hashbits) - 1;
+
+  for (;;) {
+    bkt = &map->table[idx];
+
+    if (bkt->data == NULL || psl > bkt->psl) {
+      return NGHTTP2_ERR_INVALID_ARGUMENT;
+    }
+
+    if (bkt->key == key) {
+      b = bkt;
+      idx = (idx + 1) & mask;
+
+      for (;;) {
+        bkt = &map->table[idx];
+        if (bkt->data == NULL || bkt->psl == 0) {
+          b->data = NULL;
+          break;
+        }
+
+        --bkt->psl;
+        *b = *bkt;
+        b = bkt;
+
+        idx = (idx + 1) & mask;
+      }
+
+      --map->size;
+
+      return 0;
+    }
+
+    ++psl;
+    idx = (idx + 1) & mask;
+  }
+}
+
+void nghttp2_map_clear(nghttp2_map *map) {
+  if (map->size == 0) {
+    return;
+  }
+
+  memset(map->table, 0, sizeof(*map->table) * (1u << map->hashbits));
+  map->size = 0;
+}
+
+size_t nghttp2_map_size(const nghttp2_map *map) { return map->size; }

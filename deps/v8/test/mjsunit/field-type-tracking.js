@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --nostress-opt --track-field-types
-// Flags: --opt --no-always-opt
+// Flags: --allow-natives-syntax --track-field-types
+// Flags: --turbofan
 
 (function() {
   var o = { text: "Hello World!" };
   function A() {
     // Assign twice to make the field non-constant.
-    // TODO(ishell): update test once constant field tracking is done.
     this.a = {text: 'foo'};
     this.a = o;
   }
   function readA(x) {
     return x.a;
   }
+  %PrepareFunctionForOptimization(readA);
   var a = new A();
   assertUnoptimized(readA);
+  %DeoptimizeFunction(readA);
   readA(a); readA(a); readA(a);
   %OptimizeFunctionOnNextCall(readA);
   assertEquals(readA(a), o);
@@ -27,6 +28,8 @@
   b.b = o;
   assertEquals(readA(b), o);
   assertUnoptimized(readA);
+  %DeoptimizeFunction(readA);
+  %PrepareFunctionForOptimization(readA);
   %OptimizeFunctionOnNextCall(readA);
   assertEquals(readA(a), o);
   assertOptimized(readA);
@@ -38,6 +41,8 @@
     return x.a;
   }
   assertUnoptimized(readAFromB);
+  %DeoptimizeFunction(readAFromB);
+  %PrepareFunctionForOptimization(readAFromB);
   readAFromB(b); readAFromB(b); readAFromB(b);
   %OptimizeFunctionOnNextCall(readAFromB);
   assertEquals(readAFromB(b), o);
@@ -50,6 +55,10 @@
   c.a = [1];
   assertUnoptimized(readA);
   assertUnoptimized(readAFromB);
+  %DeoptimizeFunction(readA);
+  %DeoptimizeFunction(readAFromB);
+  %PrepareFunctionForOptimization(readA);
+  %PrepareFunctionForOptimization(readAFromB);
   assertEquals(readA(a), o);
   assertEquals(readA(b), o);
   assertEquals(readA(c), [1]);
@@ -78,7 +87,9 @@
   A.prototype = {y: 20};
   function B(o) { return o.a.y; }
   function C() { this.a = new A(); }
+  %EnsureFeedbackVectorForFunction(C);
 
+  %PrepareFunctionForOptimization(B);
   B(new C());
   B(new C());
   %OptimizeFunctionOnNextCall(B);
@@ -86,10 +97,15 @@
   assertEquals(20, B(c));
   assertOptimized(B);
   c.a.y = 10;
-  assertEquals(10, B(c));
   assertUnoptimized(B);
+  %DeoptimizeFunction(B);
+  %ClearFunctionFeedback(B);
+  assertEquals(10, B(c));
 
+  %DeoptimizeFunction(B);
+  %PrepareFunctionForOptimization(B);
   var c = new C();
+  assertEquals(20, B(c));
   %OptimizeFunctionOnNextCall(B);
   assertEquals(20, B(c));
   assertOptimized(B);
@@ -111,23 +127,26 @@
 
 (function() {
   function Foo(x) { this.x = x; }
-  // TODO(ishell): update test once constant field tracking is done.
   var f0 = new Foo({x: 0});
   f0.x = {x: 0};  // make Foo.x non-constant here.
   var f1 = new Foo({x: 1});
   var f2 = new Foo({x: 2});
   var f3 = new Foo({x: 3});
   function readX(f) { return f.x.x; }
+  %PrepareFunctionForOptimization(readX);
   assertEquals(readX(f1), 1);
   assertEquals(readX(f2), 2);
   assertUnoptimized(readX);
+  %DeoptimizeFunction(readX);
   %OptimizeFunctionOnNextCall(readX);
   assertEquals(readX(f3), 3);
   assertOptimized(readX);
   function writeX(f, x) { f.x = x; }
+  %PrepareFunctionForOptimization(writeX);
   writeX(f1, {x: 11});
   writeX(f2, {x: 22});
   assertUnoptimized(writeX);
+  %DeoptimizeFunction(writeX);
   assertEquals(readX(f1), 11);
   assertEquals(readX(f2), 22);
   assertOptimized(readX);
@@ -148,13 +167,19 @@
   var f2 = new Narf(2);
   var f3 = new Narf(3);
   function baz(f, y) { f.y = y; }
-  baz(f1, {y: 9});
-  baz(f2, {y: 9});
-  baz(f2, {y: 9});
+  %PrepareFunctionForOptimization(baz);
+  baz(f1, {b: 9});
+  baz(f2, {b: 9});
+  baz(f2, {b: 9});
   %OptimizeFunctionOnNextCall(baz);
-  baz(f2, {y: 9});
+  baz(f2, {b: 9});
   baz(f3, {a: -1});
-  assertUnoptimized(baz);
+  // TODO(v8:11457) Currently, Turbofan/Turboprop can never inline any stores if
+  // there is a dictionary mode object in the protoype chain. Therefore, if
+  // v8_dict_property_const_tracking is enabled, the optimized code only
+  // contains a call to the IC handler and doesn't get deopted.
+  assertEquals(%IsDictPropertyConstTrackingEnabled(),
+               isOptimized(baz));
 })();
 
 (function() {
@@ -163,6 +188,7 @@
   function readA(o) { return o.x.a; }
   var f = new Foo({a:1});
   var b = new Bar({a:2});
+  %PrepareFunctionForOptimization(readA);
   assertEquals(readA(f), 1);
   assertEquals(readA(b), 2);
   assertEquals(readA(f), 1);

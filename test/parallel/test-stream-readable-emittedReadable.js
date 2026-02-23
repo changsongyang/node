@@ -10,7 +10,7 @@ const readable = new Readable({
 // Initialized to false.
 assert.strictEqual(readable._readableState.emittedReadable, false);
 
-const expected = [Buffer.from('foobar'), Buffer.from('quo'), null];
+const expected = [Buffer.from('foo'), Buffer.from('bar'), Buffer.from('quo'), null];
 readable.on('readable', common.mustCall(() => {
   // emittedReadable should be true when the readable event is emitted
   assert.strictEqual(readable._readableState.emittedReadable, true);
@@ -31,7 +31,7 @@ process.nextTick(common.mustCall(() => {
   readable.push('bar');
 }));
 
-// these triggers two readable events
+// These triggers two readable events
 setImmediate(common.mustCall(() => {
   readable.push('quo');
   process.nextTick(common.mustCall(() => {

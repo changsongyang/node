@@ -1,8 +1,6 @@
 // Copyright 2016 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// TODO(luoe): remove flag when it is on by default.
-// Flags: --harmony-bigint
 
 let {session, contextGroup, Protocol} = InspectorTest.start("Tests that Runtime.evaluate will generate correct previews.");
 
@@ -56,15 +54,6 @@ for (var i = 0; i < 10; i++) {
   mixedSet["_prop_" + i] = 1;
   mixedSet.add(i);
 }
-
-var deterministicNativeFunction = Math.log;
-var parentObj = {};
-Object.defineProperty(parentObj, 'propNotNamedProto', {
-  get: deterministicNativeFunction,
-  set: function() {}
-});
-var objInheritsGetterProperty = {__proto__: parentObj};
-inspector.allowAccessorFormatting(objInheritsGetterProperty);
 
 var arrayWithLongValues = ["a".repeat(101), 2n**401n];
 `);
@@ -131,13 +120,6 @@ InspectorTest.runTestSuite([
   function testMixedSetPropertiesPreview(next)
   {
     Protocol.Runtime.evaluate({ "expression": "mixedSet", "generatePreview": true })
-        .then(result => InspectorTest.logMessage(result.result.result.preview))
-        .then(next);
-  },
-
-  function testObjInheritsGetterProperty(next)
-  {
-    Protocol.Runtime.evaluate({ "expression": "objInheritsGetterProperty", "generatePreview": true })
         .then(result => InspectorTest.logMessage(result.result.result.preview))
         .then(next);
   },

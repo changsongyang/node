@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --expose-gc
+// Stress-testing this test is very slow and doesn't provide useful coverage.
 
 const f = eval(`(function f(i) {
   if (i == 0) {

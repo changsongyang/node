@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "include/v8.h"
-#include "src/api.h"
-#include "src/objects-inl.h"
+#include "include/v8-context.h"
+#include "include/v8-function.h"
+#include "include/v8-isolate.h"
+#include "include/v8-local-handle.h"
+#include "include/v8-primitive.h"
+#include "include/v8-template.h"
+#include "src/objects/objects-inl.h"
 #include "test/unittests/test-utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -20,22 +24,23 @@ TEST_F(ObjectTest, SetAccessorWhenUnconfigurablePropAlreadyDefined) {
   TryCatch try_catch(isolate());
 
   Local<Object> global = context()->Global();
-  Local<String> property_name =
-      String::NewFromUtf8(isolate(), "foo", NewStringType::kNormal)
-          .ToLocalChecked();
+  Local<String> property_name = String::NewFromUtf8Literal(isolate(), "foo");
 
   PropertyDescriptor prop_desc;
   prop_desc.set_configurable(false);
   global->DefineProperty(context(), property_name, prop_desc).ToChecked();
 
-  Maybe<bool> result = global->SetAccessor(context(), property_name,
-                                           accessor_name_getter_callback);
+  Maybe<bool> result = global->SetNativeDataProperty(
+      context(), property_name, accessor_name_getter_callback);
   ASSERT_TRUE(result.IsJust());
   ASSERT_FALSE(result.FromJust());
   ASSERT_FALSE(try_catch.HasCaught());
 }
 
 using LapContextTest = TestWithIsolate;
+// This tag value has been picked arbitrarily between 0 and
+// V_EXTERNAL_POINTER_TAG_COUNT.
+constexpr v8::ExternalPointerTypeTag kContextTag = 25;
 
 TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPrototype) {
   // The receiver object is created in |receiver_context|, but its prototype
@@ -51,17 +56,16 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPrototype) {
   Local<FunctionTemplate> function_template = FunctionTemplate::New(isolate());
   Local<Signature> signature = Signature::New(isolate(), function_template);
   Local<String> property_key =
-      String::NewFromUtf8(isolate(), "property", NewStringType::kNormal)
-          .ToLocalChecked();
+      String::NewFromUtf8Literal(isolate(), "property");
   Local<FunctionTemplate> get_or_set = FunctionTemplate::New(
       isolate(),
       [](const FunctionCallbackInfo<Value>& info) {
         ++call_count;
         Local<Context> prototype_context = *reinterpret_cast<Local<Context>*>(
-            info.Data().As<External>()->Value());
+            info.Data().As<External>()->Value(kContextTag));
         EXPECT_EQ(prototype_context, info.GetIsolate()->GetCurrentContext());
       },
-      External::New(isolate(), &prototype_context), signature);
+      External::New(isolate(), &prototype_context, kContextTag), signature);
   function_template->PrototypeTemplate()->SetAccessorProperty(
       property_key, get_or_set, get_or_set);
 
@@ -72,17 +76,18 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPrototype) {
   Local<Function> interface_for_prototype =
       function_template->GetFunction(prototype_context).ToLocalChecked();
   Local<String> prototype_key =
-      String::NewFromUtf8(isolate(), "prototype", NewStringType::kNormal)
-          .ToLocalChecked();
+      String::NewFromUtf8Literal(isolate(), "prototype");
   Local<Object> prototype =
       interface_for_prototype->Get(caller_context, prototype_key)
           .ToLocalChecked()
           .As<Object>();
   Local<Object> object =
       interface_for_receiver->NewInstance(receiver_context).ToLocalChecked();
-  object->SetPrototype(caller_context, prototype).ToChecked();
-  EXPECT_EQ(receiver_context, object->CreationContext());
-  EXPECT_EQ(prototype_context, prototype->CreationContext());
+  object->SetPrototypeV2(caller_context, prototype).ToChecked();
+  EXPECT_EQ(receiver_context,
+            object->GetCreationContext(isolate()).ToLocalChecked());
+  EXPECT_EQ(prototype_context,
+            prototype->GetCreationContext(isolate()).ToLocalChecked());
 
   EXPECT_EQ(0, call_count);
   object->Get(caller_context, property_key).ToLocalChecked();
@@ -91,21 +96,17 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPrototype) {
   EXPECT_EQ(2, call_count);
 
   // Test with a compiled version.
-  Local<String> object_key =
-      String::NewFromUtf8(isolate(), "object", NewStringType::kNormal)
-          .ToLocalChecked();
+  Local<String> object_key = String::NewFromUtf8Literal(isolate(), "object");
   caller_context->Global()->Set(caller_context, object_key, object).ToChecked();
   const char script[] =
       "function f() { object.property; object.property = 0; } "
+      "%PrepareFunctionForOptimization(f); "
       "f(); f(); "
       "%OptimizeFunctionOnNextCall(f); "
       "f();";
   Context::Scope scope(caller_context);
-  internal::FLAG_allow_natives_syntax = true;
-  Script::Compile(
-      caller_context,
-      String::NewFromUtf8(isolate(), script, v8::NewStringType::kNormal)
-          .ToLocalChecked())
+  internal::v8_flags.allow_natives_syntax = true;
+  Script::Compile(caller_context, String::NewFromUtf8Literal(isolate(), script))
       .ToLocalChecked()
       ->Run(caller_context)
       .ToLocalChecked();
@@ -122,17 +123,16 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPlatformObject) {
   Local<FunctionTemplate> function_template = FunctionTemplate::New(isolate());
   Local<Signature> signature = Signature::New(isolate(), function_template);
   Local<String> property_key =
-      String::NewFromUtf8(isolate(), "property", NewStringType::kNormal)
-          .ToLocalChecked();
+      String::NewFromUtf8Literal(isolate(), "property");
   Local<FunctionTemplate> get_or_set = FunctionTemplate::New(
       isolate(),
       [](const FunctionCallbackInfo<Value>& info) {
         ++call_count;
         Local<Context> receiver_context = *reinterpret_cast<Local<Context>*>(
-            info.Data().As<External>()->Value());
+            info.Data().As<External>()->Value(kContextTag));
         EXPECT_EQ(receiver_context, info.GetIsolate()->GetCurrentContext());
       },
-      External::New(isolate(), &receiver_context), signature);
+      External::New(isolate(), &receiver_context, kContextTag), signature);
   function_template->InstanceTemplate()->SetAccessorProperty(
       property_key, get_or_set, get_or_set);
 
@@ -148,21 +148,17 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnPlatformObject) {
   EXPECT_EQ(2, call_count);
 
   // Test with a compiled version.
-  Local<String> object_key =
-      String::NewFromUtf8(isolate(), "object", NewStringType::kNormal)
-          .ToLocalChecked();
+  Local<String> object_key = String::NewFromUtf8Literal(isolate(), "object");
   caller_context->Global()->Set(caller_context, object_key, object).ToChecked();
   const char script[] =
       "function f() { object.property; object.property = 0; } "
+      "%PrepareFunctionForOptimization(f);"
       "f(); f(); "
       "%OptimizeFunctionOnNextCall(f); "
       "f();";
   Context::Scope scope(caller_context);
-  internal::FLAG_allow_natives_syntax = true;
-  Script::Compile(
-      caller_context,
-      String::NewFromUtf8(isolate(), script, v8::NewStringType::kNormal)
-          .ToLocalChecked())
+  internal::v8_flags.allow_natives_syntax = true;
+  Script::Compile(caller_context, String::NewFromUtf8Literal(isolate(), script))
       .ToLocalChecked()
       ->Run(caller_context)
       .ToLocalChecked();
@@ -178,17 +174,17 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnInterface) {
 
   Local<FunctionTemplate> function_template = FunctionTemplate::New(isolate());
   Local<String> property_key =
-      String::NewFromUtf8(isolate(), "property", NewStringType::kNormal)
-          .ToLocalChecked();
+      String::NewFromUtf8Literal(isolate(), "property");
   Local<FunctionTemplate> get_or_set = FunctionTemplate::New(
       isolate(),
       [](const FunctionCallbackInfo<Value>& info) {
         ++call_count;
         Local<Context> interface_context = *reinterpret_cast<Local<Context>*>(
-            info.Data().As<External>()->Value());
+            info.Data().As<External>()->Value(kContextTag));
         EXPECT_EQ(interface_context, info.GetIsolate()->GetCurrentContext());
       },
-      External::New(isolate(), &interface_context), Local<Signature>());
+      External::New(isolate(), &interface_context, kContextTag),
+      Local<Signature>());
   function_template->SetAccessorProperty(property_key, get_or_set, get_or_set);
 
   Local<Function> interface =
@@ -202,22 +198,19 @@ TEST_F(LapContextTest, CurrentContextInLazyAccessorOnInterface) {
 
   // Test with a compiled version.
   Local<String> interface_key =
-      String::NewFromUtf8(isolate(), "Interface", NewStringType::kNormal)
-          .ToLocalChecked();
+      String::NewFromUtf8Literal(isolate(), "Interface");
   caller_context->Global()
       ->Set(caller_context, interface_key, interface)
       .ToChecked();
   const char script[] =
       "function f() { Interface.property; Interface.property = 0; } "
+      "%PrepareFunctionForOptimization(f);"
       "f(); f(); "
       "%OptimizeFunctionOnNextCall(f); "
       "f();";
   Context::Scope scope(caller_context);
-  internal::FLAG_allow_natives_syntax = true;
-  Script::Compile(
-      caller_context,
-      String::NewFromUtf8(isolate(), script, v8::NewStringType::kNormal)
-          .ToLocalChecked())
+  internal::v8_flags.allow_natives_syntax = true;
+  Script::Compile(caller_context, String::NewFromUtf8Literal(isolate(), script))
       .ToLocalChecked()
       ->Run(caller_context)
       .ToLocalChecked();

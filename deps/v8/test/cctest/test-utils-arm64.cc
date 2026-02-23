@@ -25,14 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
-
-#include "src/arm64/assembler-arm64-inl.h"
-#include "src/arm64/utils-arm64.h"
-#include "src/base/template-utils.h"
-#include "src/macro-assembler-inl.h"
-#include "test/cctest/cctest.h"
 #include "test/cctest/test-utils-arm64.h"
+
+#include "src/base/template-utils.h"
+#include "src/codegen/arm64/assembler-arm64-inl.h"
+#include "src/codegen/macro-assembler-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -72,18 +69,19 @@ bool Equal128(vec128_t expected, const RegisterDump*, vec128_t result) {
 }
 
 bool EqualFP32(float expected, const RegisterDump*, float result) {
-  if (bit_cast<uint32_t>(expected) == bit_cast<uint32_t>(result)) {
+  if (base::bit_cast<uint32_t>(expected) == base::bit_cast<uint32_t>(result)) {
     return true;
   } else {
     if (std::isnan(expected) || (expected == 0.0)) {
       printf("Expected 0x%08" PRIx32 "\t Found 0x%08" PRIx32 "\n",
-             bit_cast<uint32_t>(expected), bit_cast<uint32_t>(result));
+             base::bit_cast<uint32_t>(expected),
+             base::bit_cast<uint32_t>(result));
     } else {
       printf("Expected %.9f (0x%08" PRIx32
              ")\t "
              "Found %.9f (0x%08" PRIx32 ")\n",
-             expected, bit_cast<uint32_t>(expected), result,
-             bit_cast<uint32_t>(result));
+             expected, base::bit_cast<uint32_t>(expected), result,
+             base::bit_cast<uint32_t>(result));
     }
     return false;
   }
@@ -91,19 +89,20 @@ bool EqualFP32(float expected, const RegisterDump*, float result) {
 
 
 bool EqualFP64(double expected, const RegisterDump*, double result) {
-  if (bit_cast<uint64_t>(expected) == bit_cast<uint64_t>(result)) {
+  if (base::bit_cast<uint64_t>(expected) == base::bit_cast<uint64_t>(result)) {
     return true;
   }
 
   if (std::isnan(expected) || (expected == 0.0)) {
     printf("Expected 0x%016" PRIx64 "\t Found 0x%016" PRIx64 "\n",
-           bit_cast<uint64_t>(expected), bit_cast<uint64_t>(result));
+           base::bit_cast<uint64_t>(expected),
+           base::bit_cast<uint64_t>(result));
   } else {
     printf("Expected %.17f (0x%016" PRIx64
            ")\t "
            "Found %.17f (0x%016" PRIx64 ")\n",
-           expected, bit_cast<uint64_t>(expected), result,
-           bit_cast<uint64_t>(result));
+           expected, base::bit_cast<uint64_t>(expected), result,
+           base::bit_cast<uint64_t>(result));
   }
   return false;
 }
@@ -148,7 +147,7 @@ bool EqualFP32(float expected, const RegisterDump* core,
   uint64_t result_64 = core->dreg_bits(fpreg.code());
   if ((result_64 & 0xFFFFFFFF00000000L) != 0) {
     printf("Expected 0x%08" PRIx32 " (%f)\t Found 0x%016" PRIx64 "\n",
-           bit_cast<uint32_t>(expected), expected, result_64);
+           base::bit_cast<uint32_t>(expected), expected, result_64);
     return false;
   }
 
@@ -205,9 +204,11 @@ bool EqualNzcv(uint32_t expected, uint32_t result) {
   return true;
 }
 
-
-bool EqualRegisters(const RegisterDump* a, const RegisterDump* b) {
-  for (unsigned i = 0; i < kNumberOfRegisters; i++) {
+bool EqualV8Registers(const RegisterDump* a, const RegisterDump* b) {
+  CPURegList available_regs = kCallerSaved;
+  available_regs.Combine(kCalleeSaved);
+  while (!available_regs.IsEmpty()) {
+    int i = available_regs.PopLowestIndex().code();
     if (a->xreg(i) != b->xreg(i)) {
       printf("x%d\t Expected 0x%016" PRIx64 "\t Found 0x%016" PRIx64 "\n",
              i, a->xreg(i), b->xreg(i));
@@ -230,106 +231,100 @@ bool EqualRegisters(const RegisterDump* a, const RegisterDump* b) {
 
 RegList PopulateRegisterArray(Register* w, Register* x, Register* r,
                               int reg_size, int reg_count, RegList allowed) {
-  RegList list = 0;
+  RegList list;
   int i = 0;
-  for (unsigned n = 0; (n < kNumberOfRegisters) && (i < reg_count); n++) {
-    if (((1UL << n) & allowed) != 0) {
-      // Only assign allowed registers.
-      if (r) {
-        r[i] = Register::Create(n, reg_size);
-      }
-      if (x) {
-        x[i] = Register::Create(n, kXRegSizeInBits);
-      }
-      if (w) {
-        w[i] = Register::Create(n, kWRegSizeInBits);
-      }
-      list |= (1UL << n);
-      i++;
+  // Only assign allowed registers.
+  for (Register reg : allowed) {
+    if (i == reg_count) break;
+    if (r) {
+      r[i] = Register::Create(reg.code(), reg_size);
     }
+    if (x) {
+      x[i] = reg.X();
+    }
+    if (w) {
+      w[i] = reg.W();
+    }
+    list.set(reg);
+    i++;
   }
   // Check that we got enough registers.
-  CHECK(CountSetBits(list, kNumberOfRegisters) == reg_count);
+  CHECK_EQ(list.Count(), reg_count);
 
   return list;
 }
 
-RegList PopulateVRegisterArray(VRegister* s, VRegister* d, VRegister* v,
-                               int reg_size, int reg_count, RegList allowed) {
-  RegList list = 0;
+DoubleRegList PopulateVRegisterArray(VRegister* s, VRegister* d, VRegister* v,
+                                     int reg_size, int reg_count,
+                                     DoubleRegList allowed) {
+  DoubleRegList list;
   int i = 0;
-  for (unsigned n = 0; (n < kNumberOfVRegisters) && (i < reg_count); n++) {
-    if (((1UL << n) & allowed) != 0) {
-      // Only assigned allowed registers.
-      if (v) {
-        v[i] = VRegister::Create(n, reg_size);
-      }
-      if (d) {
-        d[i] = VRegister::Create(n, kDRegSizeInBits);
-      }
-      if (s) {
-        s[i] = VRegister::Create(n, kSRegSizeInBits);
-      }
-      list |= (1UL << n);
-      i++;
+  // Only assigned allowed registers.
+  for (VRegister reg : allowed) {
+    if (i == reg_count) break;
+    if (v) {
+      v[i] = VRegister::Create(reg.code(), reg_size);
     }
+    if (d) {
+      d[i] = reg.D();
+    }
+    if (s) {
+      s[i] = reg.S();
+    }
+    list.set(reg);
+    i++;
   }
   // Check that we got enough registers.
-  CHECK(CountSetBits(list, kNumberOfVRegisters) == reg_count);
+  CHECK_EQ(list.Count(), reg_count);
 
   return list;
 }
-
 
 void Clobber(MacroAssembler* masm, RegList reg_list, uint64_t const value) {
   Register first = NoReg;
-  for (unsigned i = 0; i < kNumberOfRegisters; i++) {
-    if (reg_list & (1UL << i)) {
-      Register xn = Register::Create(i, kXRegSizeInBits);
-      // We should never write into sp here.
-      CHECK(!xn.Is(sp));
-      if (!xn.IsZero()) {
-        if (!first.IsValid()) {
-          // This is the first register we've hit, so construct the literal.
-          __ Mov(xn, value);
-          first = xn;
-        } else {
-          // We've already loaded the literal, so re-use the value already
-          // loaded into the first register we hit.
-          __ Mov(xn, first);
-        }
-      }
-    }
-  }
-}
-
-
-void ClobberFP(MacroAssembler* masm, RegList reg_list, double const value) {
-  VRegister first = NoVReg;
-  for (unsigned i = 0; i < kNumberOfVRegisters; i++) {
-    if (reg_list & (1UL << i)) {
-      VRegister dn = VRegister::Create(i, kDRegSizeInBits);
-      if (!first.IsValid()) {
+  for (Register reg : reg_list) {
+    Register xn = reg.X();
+    // We should never write into sp here.
+    CHECK_NE(xn, sp);
+    if (!xn.IsZero()) {
+      if (!first.is_valid()) {
         // This is the first register we've hit, so construct the literal.
-        __ Fmov(dn, value);
-        first = dn;
+        __ Mov(xn, value);
+        first = xn;
       } else {
-        // We've already loaded the literal, so re-use the value already loaded
-        // into the first register we hit.
-        __ Fmov(dn, first);
+        // We've already loaded the literal, so reuse the value already
+        // loaded into the first register we hit.
+        __ Mov(xn, first);
       }
     }
   }
 }
 
+void ClobberFP(MacroAssembler* masm, DoubleRegList reg_list,
+               double const value) {
+  VRegister first = NoVReg;
+  for (VRegister reg : reg_list) {
+    VRegister dn = reg.D();
+    if (!first.is_valid()) {
+      // This is the first register we've hit, so construct the literal.
+      __ Fmov(dn, value);
+      first = dn;
+    } else {
+      // We've already loaded the literal, so reuse the value already loaded
+      // into the first register we hit.
+      __ Fmov(dn, first);
+    }
+  }
+}
 
 void Clobber(MacroAssembler* masm, CPURegList reg_list) {
   if (reg_list.type() == CPURegister::kRegister) {
     // This will always clobber X registers.
-    Clobber(masm, reg_list.list());
+    Clobber(masm, RegList::FromBits(static_cast<uint32_t>(reg_list.bits())));
   } else if (reg_list.type() == CPURegister::kVRegister) {
     // This will always clobber D registers.
-    ClobberFP(masm, reg_list.list());
+    ClobberFP(masm,
+              DoubleRegList::FromBits(static_cast<uint32_t>(reg_list.bits())));
   } else {
     UNREACHABLE();
   }
@@ -338,10 +333,10 @@ void Clobber(MacroAssembler* masm, CPURegList reg_list) {
 
 void RegisterDump::Dump(MacroAssembler* masm) {
   // Ensure that we don't unintentionally clobber any registers.
-  RegList old_tmp_list = masm->TmpList()->list();
-  RegList old_fptmp_list = masm->FPTmpList()->list();
-  masm->TmpList()->set_list(0);
-  masm->FPTmpList()->set_list(0);
+  uint64_t old_tmp_list = masm->TmpList()->bits();
+  uint64_t old_fptmp_list = masm->FPTmpList()->bits();
+  masm->TmpList()->set_bits(0);
+  masm->FPTmpList()->set_bits(0);
 
   // Preserve some temporary registers.
   Register dump_base = x0;
@@ -441,8 +436,8 @@ void RegisterDump::Dump(MacroAssembler* masm) {
   __ Ldr(dump2, MemOperand(dump2, dump2.code() * kXRegSize));
 
   // Restore the MacroAssembler's scratch registers.
-  masm->TmpList()->set_list(old_tmp_list);
-  masm->FPTmpList()->set_list(old_fptmp_list);
+  masm->TmpList()->set_bits(old_tmp_list);
+  masm->FPTmpList()->set_bits(old_fptmp_list);
 
   completed_ = true;
 }

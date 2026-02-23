@@ -74,14 +74,25 @@ for (var constructor of typedArrayConstructors) {
   var tmp = {
     [Symbol.toPrimitive]() {
       assertUnreachable("Parameter should not be processed when " +
-                        "array.[[ViewedArrayBuffer]] is neutered.");
+                        "array.[[ViewedArrayBuffer]] is detached.");
       return 0;
     }
   };
   var array = new constructor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  %ArrayBufferNeuter(array.buffer);
+  %ArrayBufferDetach(array.buffer);
   assertThrows(() => array.fill(tmp), TypeError);
+
+  // Exercise fast paths.
+  assertArrayEquals([0, 0, 0, 0], new constructor(4).fill(0));
 }
+
+var signed = [Int8Array, Int16Array, Int32Array, Float32Array, Float64Array];
+for (var constructor of signed) {
+  assertArrayEquals([-1, -1, -1, -1], new constructor(4).fill(-1));
+}
+assertArrayEquals([0xFF, 0xFF, 0xFF], new Uint8Array(3).fill(-1));
+assertArrayEquals([0xFFFF, 0xFFFF, 0xFFFF], new Uint16Array(3).fill(-1));
+assertArrayEquals([0xFFFF_FFFF, 0xFFFF_FFFF], new Uint32Array(2).fill(-1));
 
 for (var constructor of intArrayConstructors) {
   assertArrayEquals([0, 0, 0, 0, 0], new constructor([0, 0, 0, 0, 0]).fill(undefined));

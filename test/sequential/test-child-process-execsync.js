@@ -21,17 +21,22 @@
 
 'use strict';
 const common = require('../common');
+const tmpdir = require('../common/tmpdir');
+tmpdir.refresh();
+
 const assert = require('assert');
 
 const { execFileSync, execSync, spawnSync } = require('child_process');
+const { getSystemErrorName } = require('util');
 
 const TIMER = 200;
-const SLEEP = 2000;
-
-const start = Date.now();
-const execOpts = { encoding: 'utf8', shell: true };
-let err;
-let caught = false;
+let SLEEP = 2000;
+if (common.isWindows) {
+  // Some of the windows machines in the CI need more time to launch
+  // and receive output from child processes.
+  // https://github.com/nodejs/build/issues/3014
+  SLEEP = 10000;
+}
 
 // Verify that stderr is not accessed when a bad shell is used
 assert.throws(
@@ -43,13 +48,15 @@ assert.throws(
   /spawnSync bad_shell ENOENT/
 );
 
-let cmd, ret;
+let caught = false;
+let ret, err;
+const start = Date.now();
 try {
-  cmd = `"${process.execPath}" -e "setTimeout(function(){}, ${SLEEP});"`;
-  ret = execSync(cmd, { timeout: TIMER });
+  const cmd = `"${common.isWindows ? process.execPath : '$NODE'}" -e "setTimeout(function(){}, ${SLEEP});"`;
+  ret = execSync(cmd, { env: { ...process.env, NODE: process.execPath }, timeout: TIMER });
 } catch (e) {
   caught = true;
-  assert.strictEqual(e.errno, 'ETIMEDOUT');
+  assert.strictEqual(getSystemErrorName(e.errno), 'ETIMEDOUT');
   err = e;
 } finally {
   assert.strictEqual(ret, undefined,
@@ -57,7 +64,7 @@ try {
   assert.ok(caught, 'execSync should throw');
   const end = Date.now() - start;
   assert(end < SLEEP);
-  assert(err.status > 128 || err.signal);
+  assert(err.status > 128 || err.signal, `status: ${err.status}, signal: ${err.signal}`);
 }
 
 assert.throws(function() {
@@ -69,33 +76,38 @@ const msgBuf = Buffer.from(`${msg}\n`);
 
 // console.log ends every line with just '\n', even on Windows.
 
-cmd = `"${process.execPath}" -e "console.log('${msg}');"`;
+const cmd = `"${common.isWindows ? process.execPath : '$NODE'}" -e "console.log('${msg}');"`;
+const env = common.isWindows ? process.env : { ...process.env, NODE: process.execPath };
 
-ret = execSync(cmd);
+{
+  const ret = execSync(cmd, common.isWindows ? undefined : { env });
+  assert.strictEqual(ret.length, msgBuf.length);
+  assert.deepStrictEqual(ret, msgBuf);
+}
 
-assert.strictEqual(ret.length, msgBuf.length);
-assert.deepStrictEqual(ret, msgBuf);
-
-ret = execSync(cmd, { encoding: 'utf8' });
-
-assert.strictEqual(ret, `${msg}\n`);
+{
+  const ret = execSync(cmd, { encoding: 'utf8', env });
+  assert.strictEqual(ret, `${msg}\n`);
+}
 
 const args = [
   '-e',
-  `console.log("${msg}");`
+  `console.log("${msg}");`,
 ];
-ret = execFileSync(process.execPath, args);
+{
+  const ret = execFileSync(process.execPath, args);
+  assert.deepStrictEqual(ret, msgBuf);
+}
 
-assert.deepStrictEqual(ret, msgBuf);
-
-ret = execFileSync(process.execPath, args, { encoding: 'utf8' });
-
-assert.strictEqual(ret, `${msg}\n`);
+{
+  const ret = execFileSync(process.execPath, args, { encoding: 'utf8' });
+  assert.strictEqual(ret, `${msg}\n`);
+}
 
 // Verify that the cwd option works.
 // See https://github.com/nodejs/node-v0.x-archive/issues/7824.
 {
-  const cwd = common.rootDir;
+  const cwd = tmpdir.path;
   const cmd = common.isWindows ? 'echo %cd%' : 'pwd';
   const response = execSync(cmd, { cwd });
 
@@ -121,7 +133,7 @@ assert.strictEqual(ret, `${msg}\n`);
     'signal',
     'status',
     'stderr',
-    'stdout'
+    'stdout',
   ]);
 
   assert.throws(() => {
@@ -133,13 +145,16 @@ assert.strictEqual(ret, `${msg}\n`);
     assert.strictEqual(err.message, msg);
     assert.strictEqual(err.status, 1);
     assert.strictEqual(typeof err.pid, 'number');
-    spawnSyncKeys.forEach((key) => {
-      if (key === 'pid') return;
-      assert.deepStrictEqual(err[key], spawnSyncResult[key]);
-    });
+    spawnSyncKeys
+      .filter((key) => key !== 'pid')
+      .forEach(common.mustCallAtLeast((key) => {
+        assert.deepStrictEqual(err[key], spawnSyncResult[key]);
+      }));
     return true;
   });
 }
 
 // Verify the shell option works properly
-execFileSync(process.execPath, [], execOpts);
+execFileSync(`"${common.isWindows ? process.execPath : '$NODE'}"`, [], {
+  encoding: 'utf8', shell: true, env,
+});

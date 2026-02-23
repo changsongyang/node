@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file
 
-// Flags: --allow-natives-syntax
+// Flags: --allow-natives-syntax --inspector-live-edit
 
 Debug = debug.Debug
 
@@ -12,8 +12,9 @@ eval("var something1 = 25; "
 
 function foo() {  return ChooseAnimal() }
 
+%PrepareFunctionForOptimization(foo);
 assertEquals("Cat", foo());
-    %OptimizeFunctionOnNextCall(foo);
+%OptimizeFunctionOnNextCall(foo);
 
 foo();
 

@@ -1,15 +1,18 @@
 {
-  "toascii.window.js": {
-    "requires": ["intl"],
+  "historical.any.js": {
+    "fail": {
+      "expected": [
+        "searchParams on location object"
+      ]
+    }
+  },
+  "javascript-urls.window.js": {
+    "skip": "requires document.body reference"
+  },
+  "percent-encoding.window.js": {
     "skip": "TODO: port from .window.js"
   },
-  "historical.any.js": {
-    "requires": ["intl"]
-  },
-  "urlencoded-parser.any.js": {
-    "fail": "missing Request and Response"
-  },
-  "idlharness.any.js": {
-    "fail": "getter/setter names are wrong, etc."
+  "url-setters-a-area.window.js": {
+    "skip": "already tested in url-setters.any.js"
   }
 }

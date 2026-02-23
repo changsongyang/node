@@ -28,13 +28,7 @@
 #ifndef V8_ARM64_TEST_UTILS_ARM64_H_
 #define V8_ARM64_TEST_UTILS_ARM64_H_
 
-#include "src/v8.h"
-#include "test/cctest/cctest.h"
-
-#include "src/arm64/macro-assembler-arm64.h"
-#include "src/arm64/utils-arm64.h"
-#include "src/macro-assembler.h"
-
+#include "src/codegen/macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -83,7 +77,7 @@ class RegisterDump {
   }
 
   inline float sreg(unsigned code) const {
-    return bit_cast<float>(sreg_bits(code));
+    return base::bit_cast<float>(sreg_bits(code));
   }
 
   inline uint64_t dreg_bits(unsigned code) const {
@@ -92,7 +86,7 @@ class RegisterDump {
   }
 
   inline double dreg(unsigned code) const {
-    return bit_cast<double>(dreg_bits(code));
+    return base::bit_cast<double>(dreg_bits(code));
   }
 
   inline vec128_t qreg(unsigned code) const { return dump_.q_[code]; }
@@ -209,7 +203,8 @@ bool Equal128(uint64_t expected_h, uint64_t expected_l,
 
 bool EqualNzcv(uint32_t expected, uint32_t result);
 
-bool EqualRegisters(const RegisterDump* a, const RegisterDump* b);
+// Compares two RegisterDumps, only comparing registers that V8 uses.
+bool EqualV8Registers(const RegisterDump* a, const RegisterDump* b);
 
 // Create an array of type {RegType}, size {Size}, filled with {NoReg}.
 template <typename RegType, size_t Size>
@@ -231,8 +226,9 @@ RegList PopulateRegisterArray(Register* w, Register* x, Register* r,
                               int reg_size, int reg_count, RegList allowed);
 
 // As PopulateRegisterArray, but for floating-point registers.
-RegList PopulateVRegisterArray(VRegister* s, VRegister* d, VRegister* v,
-                               int reg_size, int reg_count, RegList allowed);
+DoubleRegList PopulateVRegisterArray(VRegister* s, VRegister* d, VRegister* v,
+                                     int reg_size, int reg_count,
+                                     DoubleRegList allowed);
 
 // Ovewrite the contents of the specified registers. This enables tests to
 // check that register contents are written in cases where it's likely that the
@@ -246,7 +242,7 @@ void Clobber(MacroAssembler* masm, RegList reg_list,
              uint64_t const value = 0xFEDCBA9876543210UL);
 
 // As Clobber, but for FP registers.
-void ClobberFP(MacroAssembler* masm, RegList reg_list,
+void ClobberFP(MacroAssembler* masm, DoubleRegList reg_list,
                double const value = kFP64SignallingNaN);
 
 // As Clobber, but for a CPURegList with either FP or integer registers. When

@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm --allow-natives-syntax
+// Flags: --allow-natives-syntax
 
-load('test/mjsunit/wasm/wasm-constants.js');
-load('test/mjsunit/wasm/wasm-module-builder.js');
+d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 let kReturnValue = 17;
 
 let buffer = (() => {
   let builder = new WasmModuleBuilder();
-  builder.addMemory(1, 1, true);
+  builder.addMemory(1, 1);
+  builder.exportMemoryAs('memory');
   builder.addFunction('main', kSig_i_v)
       .addBody([kExprI32Const, kReturnValue])
       .exportFunc();
@@ -97,11 +97,8 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
   print('InvalidBinaryAsyncCompilation...');
   let builder = new WasmModuleBuilder();
   builder.addFunction('f', kSig_i_i).addBody([kExprCallFunction, 0]);
-  let promise = WebAssembly.compile(builder.toBuffer());
-  assertPromiseResult(
-      promise, compiled => assertUnreachable(
-                   'should not be able to compile invalid blob.'),
-      e => assertInstanceof(e, WebAssembly.CompileError));
+  assertThrowsAsync(
+      WebAssembly.compile(builder.toBuffer()), WebAssembly.CompileError);
 })();
 
 // Multiple instances tests.
@@ -134,8 +131,8 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
 
   builder.addFunction('main', kSig_i_i)
       .addBody([
-        kExprGetLocal, 0, kExprI32LoadMem, 0, 0, kExprI32Const, 1,
-        kExprCallIndirect, signature, kTableZero, kExprGetLocal, 0,
+        kExprLocalGet, 0, kExprI32LoadMem, 0, 0, kExprI32Const, 1,
+        kExprCallIndirect, signature, kTableZero, kExprLocalGet, 0,
         kExprI32LoadMem, 0, 0, kExprCallFunction, 0, kExprI32Add
       ])
       .exportFunc();
@@ -143,7 +140,7 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
   // writer(mem[i]);
   // return mem[i] + some_value();
   builder.addFunction('_wrap_writer', signature).addBody([
-    kExprGetLocal, 0, kExprCallFunction, 1
+    kExprLocalGet, 0, kExprCallFunction, 1
   ]);
   builder.appendToTable([2, 3]);
 
@@ -178,13 +175,13 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
 (function GlobalsArePrivateToTheInstance() {
   print('GlobalsArePrivateToTheInstance...');
   var builder = new WasmModuleBuilder();
-  builder.addGlobal(kWasmI32, true);
+  builder.addGlobal(kWasmI32, true, false);
   builder.addFunction('read', kSig_i_v)
-      .addBody([kExprGetGlobal, 0])
+      .addBody([kExprGlobalGet, 0])
       .exportFunc();
 
   builder.addFunction('write', kSig_v_i)
-      .addBody([kExprGetLocal, 0, kExprSetGlobal, 0])
+      .addBody([kExprLocalGet, 0, kExprGlobalSet, 0])
       .exportFunc();
 
   var module = new WebAssembly.Module(builder.toBuffer());
@@ -235,7 +232,7 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
 
 (function TestNoMemoryToExport() {
   let builder = new WasmModuleBuilder();
-  builder.exportMemoryAs('memory');
+  builder.exportMemoryAs('memory', 0);
   assertThrows(() => builder.instantiate(), WebAssembly.CompileError);
 })();
 
@@ -246,7 +243,7 @@ assertFalse(WebAssembly.validate(bytes(88, 88, 88, 88, 88, 88, 88, 88)));
   builder.addExport('b', builder.addFunction('', kSig_v_v).addBody([]));
   builder.addExport('c', builder.addFunction('', kSig_v_v).addBody([]));
   builder.addExport('d', builder.addFunction('', kSig_v_v).addBody([]));
-  builder.addExport('e', builder.addGlobal(kWasmI32, false));
+  builder.addExport('e', builder.addGlobal(kWasmI32, false, false));
 
   let module = new WebAssembly.Module(builder.toBuffer());
   let instance = new WebAssembly.Instance(module);

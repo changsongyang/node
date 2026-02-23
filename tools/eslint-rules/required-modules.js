@@ -1,117 +1,100 @@
 /**
- * @fileoverview Require usage of specified node modules.
+ * @file Require usage of specified node modules.
  * @author Rich Trott
  */
 'use strict';
 
-const path = require('path');
+const { isRequireCall, isString } = require('./rules-utils.js');
 
 //------------------------------------------------------------------------------
 // Rule Definition
 //------------------------------------------------------------------------------
 
-module.exports = function(context) {
-  // trim required module names
-  var requiredModules = context.options;
-  const isESM = context.parserOptions.sourceType === 'module';
+module.exports = {
+  meta: { schema: [{
+    'type': 'object',
+    'additionalProperties': {
+      'type': 'string',
+    },
+  }] },
+  create(context) {
+  // Trim required module names
+    const options = context.options[0];
+    const requiredModules = options ? Object.keys(options).map((x) => {
+      return [ x, new RegExp(options[x]) ];
+    }) : [];
+    const isESM = context.languageOptions.sourceType === 'module';
 
-  const foundModules = [];
+    const foundModules = [];
 
-  // if no modules are required we don't need to check the CallExpressions
-  if (requiredModules.length === 0) {
-    return {};
-  }
-
-  /**
-   * Function to check if a node is a string literal.
-   * @param {ASTNode} node The node to check.
-   * @returns {boolean} If the node is a string literal.
-   */
-  function isString(node) {
-    return node && node.type === 'Literal' && typeof node.value === 'string';
-  }
-
-  /**
-   * Function to check if a node is a require call.
-   * @param {ASTNode} node The node to check.
-   * @returns {boolean} If the node is a require call.
-   */
-  function isRequireCall(node) {
-    return node.callee.type === 'Identifier' && node.callee.name === 'require';
-  }
-
-  /**
-   * Function to check if the path is a required module and return its name.
-   * @param {String} str The path to check
-   * @returns {undefined|String} required module name or undefined
-   */
-  function getRequiredModuleName(str) {
-    var value = path.basename(str);
-
-    // check if value is in required modules array
-    return requiredModules.indexOf(value) !== -1 ? value : undefined;
-  }
-
-  /**
-   * Function to check if a node has an argument that is a required module and
-   * return its name.
-   * @param {ASTNode} node The node to check
-   * @returns {undefined|String} required module name or undefined
-   */
-  function getRequiredModuleNameFromCall(node) {
-    // node has arguments and first argument is string
-    if (node.arguments.length && isString(node.arguments[0])) {
-      return getRequiredModuleName(node.arguments[0].value.trim());
+    // If no modules are required we don't need to check the CallExpressions
+    if (requiredModules.length === 0) {
+      return {};
     }
 
-    return undefined;
-  }
+    /**
+     * Function to check if the path is a required module and return its name.
+     * @param {string} str The path to check
+     * @returns {undefined | string} required module name or undefined
+     */
+    function getRequiredModuleName(str) {
+      const match = requiredModules.find(([, test]) => {
+        return test.test(str);
+      });
+      return match ? match[0] : undefined;
+    }
 
-  const rules = {
-    'Program:exit'(node) {
-      if (foundModules.length < requiredModules.length) {
-        var missingModules = requiredModules.filter(
-          function(module) {
-            return foundModules.indexOf(module) === -1;
-          }
-        );
-        missingModules.forEach(function(moduleName) {
-          context.report(
-            node,
-            'Mandatory module "{{moduleName}}" must be loaded.',
-            { moduleName: moduleName }
+    /**
+     * Function to check if a node has an argument that is a required module and
+     * return its name.
+     * @param {ASTNode} node The node to check
+     * @returns {undefined | string} required module name or undefined
+     */
+    function getRequiredModuleNameFromCall(node) {
+    // Node has arguments and first argument is string
+      if (node.arguments.length && isString(node.arguments[0])) {
+        return getRequiredModuleName(node.arguments[0].value.trim());
+      }
+
+      return undefined;
+    }
+
+    const rules = {
+      'Program:exit'(node) {
+        if (foundModules.length < requiredModules.length) {
+          const missingModules = requiredModules.filter(
+            ([module]) => foundModules.indexOf(module) === -1,
           );
-        });
-      }
-    }
-  };
-
-  if (isESM) {
-    rules.ImportDeclaration = (node) => {
-      var requiredModuleName = getRequiredModuleName(node.source.value);
-      if (requiredModuleName) {
-        foundModules.push(requiredModuleName);
-      }
+          missingModules.forEach(([moduleName]) => {
+            context.report(
+              node,
+              'Mandatory module "{{moduleName}}" must be loaded.',
+              { moduleName: moduleName },
+            );
+          });
+        }
+      },
     };
-  } else {
-    rules.CallExpression = (node) => {
-      if (isRequireCall(node)) {
-        var requiredModuleName = getRequiredModuleNameFromCall(node);
 
+    if (isESM) {
+      rules.ImportDeclaration = (node) => {
+        const requiredModuleName = getRequiredModuleName(node.source.value);
         if (requiredModuleName) {
           foundModules.push(requiredModuleName);
         }
-      }
-    };
-  }
+      };
+    } else {
+      rules.CallExpression = (node) => {
+        if (isRequireCall(node)) {
+          const requiredModuleName = getRequiredModuleNameFromCall(node);
 
-  return rules;
-};
+          if (requiredModuleName) {
+            foundModules.push(requiredModuleName);
+          }
+        }
+      };
+    }
 
-module.exports.schema = {
-  'type': 'array',
-  'additionalItems': {
-    'type': 'string'
+    return rules;
   },
-  'uniqueItems': true
 };

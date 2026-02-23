@@ -1,7 +1,7 @@
 /*
- * Copyright 1998-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1998-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -9,21 +9,21 @@
 
 #include <openssl/opensslconf.h>
 #include "internal/cryptlib.h"
-#include "bn_lcl.h"
+#include "bn_local.h"
 
-#define BN_BLINDING_COUNTER     32
+#define BN_BLINDING_COUNTER 32
 
 struct bn_blinding_st {
     BIGNUM *A;
     BIGNUM *Ai;
     BIGNUM *e;
-    BIGNUM *mod;                /* just a reference */
+    BIGNUM *mod; /* just a reference */
     CRYPTO_THREAD_ID tid;
     int counter;
     unsigned long flags;
     BN_MONT_CTX *m_ctx;
-    int (*bn_mod_exp) (BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
-                       const BIGNUM *m, BN_CTX *ctx, BN_MONT_CTX *m_ctx);
+    int (*bn_mod_exp)(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
+        const BIGNUM *m, BN_CTX *ctx, BN_MONT_CTX *m_ctx);
     CRYPTO_RWLOCK *lock;
 };
 
@@ -33,14 +33,12 @@ BN_BLINDING *BN_BLINDING_new(const BIGNUM *A, const BIGNUM *Ai, BIGNUM *mod)
 
     bn_check_top(mod);
 
-    if ((ret = OPENSSL_zalloc(sizeof(*ret))) == NULL) {
-        BNerr(BN_F_BN_BLINDING_NEW, ERR_R_MALLOC_FAILURE);
+    if ((ret = OPENSSL_zalloc(sizeof(*ret))) == NULL)
         return NULL;
-    }
 
     ret->lock = CRYPTO_THREAD_lock_new();
     if (ret->lock == NULL) {
-        BNerr(BN_F_BN_BLINDING_NEW, ERR_R_MALLOC_FAILURE);
+        ERR_raise(ERR_LIB_BN, ERR_R_CRYPTO_LIB);
         OPENSSL_free(ret);
         return NULL;
     }
@@ -73,7 +71,7 @@ BN_BLINDING *BN_BLINDING_new(const BIGNUM *A, const BIGNUM *Ai, BIGNUM *mod)
 
     return ret;
 
- err:
+err:
     BN_BLINDING_free(ret);
     return NULL;
 }
@@ -82,7 +80,6 @@ void BN_BLINDING_free(BN_BLINDING *r)
 {
     if (r == NULL)
         return;
-
     BN_free(r->A);
     BN_free(r->Ai);
     BN_free(r->e);
@@ -96,30 +93,34 @@ int BN_BLINDING_update(BN_BLINDING *b, BN_CTX *ctx)
     int ret = 0;
 
     if ((b->A == NULL) || (b->Ai == NULL)) {
-        BNerr(BN_F_BN_BLINDING_UPDATE, BN_R_NOT_INITIALIZED);
+        ERR_raise(ERR_LIB_BN, BN_R_NOT_INITIALIZED);
         goto err;
     }
 
     if (b->counter == -1)
         b->counter = 0;
 
-    if (++b->counter == BN_BLINDING_COUNTER && b->e != NULL &&
-        !(b->flags & BN_BLINDING_NO_RECREATE)) {
+    if (++b->counter == BN_BLINDING_COUNTER && b->e != NULL && !(b->flags & BN_BLINDING_NO_RECREATE)) {
         /* re-create blinding parameters */
         if (!BN_BLINDING_create_param(b, NULL, NULL, ctx, NULL, NULL))
             goto err;
     } else if (!(b->flags & BN_BLINDING_NO_UPDATE)) {
-        if (!BN_mod_mul(b->A, b->A, b->A, b->mod, ctx))
-            goto err;
-        if (!BN_mod_mul(b->Ai, b->Ai, b->Ai, b->mod, ctx))
-            goto err;
+        if (b->m_ctx != NULL) {
+            if (!bn_mul_mont_fixed_top(b->Ai, b->Ai, b->Ai, b->m_ctx, ctx)
+                || !bn_mul_mont_fixed_top(b->A, b->A, b->A, b->m_ctx, ctx))
+                goto err;
+        } else {
+            if (!BN_mod_mul(b->Ai, b->Ai, b->Ai, b->mod, ctx)
+                || !BN_mod_mul(b->A, b->A, b->A, b->mod, ctx))
+                goto err;
+        }
     }
 
     ret = 1;
- err:
+err:
     if (b->counter == BN_BLINDING_COUNTER)
         b->counter = 0;
-    return (ret);
+    return ret;
 }
 
 int BN_BLINDING_convert(BIGNUM *n, BN_BLINDING *b, BN_CTX *ctx)
@@ -134,23 +135,23 @@ int BN_BLINDING_convert_ex(BIGNUM *n, BIGNUM *r, BN_BLINDING *b, BN_CTX *ctx)
     bn_check_top(n);
 
     if ((b->A == NULL) || (b->Ai == NULL)) {
-        BNerr(BN_F_BN_BLINDING_CONVERT_EX, BN_R_NOT_INITIALIZED);
-        return (0);
+        ERR_raise(ERR_LIB_BN, BN_R_NOT_INITIALIZED);
+        return 0;
     }
 
     if (b->counter == -1)
         /* Fresh blinding, doesn't need updating. */
         b->counter = 0;
     else if (!BN_BLINDING_update(b, ctx))
-        return (0);
+        return 0;
 
-    if (r != NULL) {
-        if (!BN_copy(r, b->Ai))
-            ret = 0;
-    }
+    if (r != NULL && (BN_copy(r, b->Ai) == NULL))
+        return 0;
 
-    if (!BN_mod_mul(n, n, b->A, b->mod, ctx))
-        ret = 0;
+    if (b->m_ctx != NULL)
+        ret = BN_mod_mul_montgomery(n, n, b->A, b->m_ctx, ctx);
+    else
+        ret = BN_mod_mul(n, n, b->A, b->mod, ctx);
 
     return ret;
 }
@@ -161,24 +162,40 @@ int BN_BLINDING_invert(BIGNUM *n, BN_BLINDING *b, BN_CTX *ctx)
 }
 
 int BN_BLINDING_invert_ex(BIGNUM *n, const BIGNUM *r, BN_BLINDING *b,
-                          BN_CTX *ctx)
+    BN_CTX *ctx)
 {
     int ret;
 
     bn_check_top(n);
 
-    if (r != NULL)
-        ret = BN_mod_mul(n, n, r, b->mod, ctx);
-    else {
-        if (b->Ai == NULL) {
-            BNerr(BN_F_BN_BLINDING_INVERT_EX, BN_R_NOT_INITIALIZED);
-            return (0);
+    if (r == NULL && (r = b->Ai) == NULL) {
+        ERR_raise(ERR_LIB_BN, BN_R_NOT_INITIALIZED);
+        return 0;
+    }
+
+    if (b->m_ctx != NULL) {
+        /* ensure that BN_mod_mul_montgomery takes pre-defined path */
+        if (n->dmax >= r->top) {
+            size_t i, rtop = r->top, ntop = n->top;
+            BN_ULONG mask;
+
+            for (i = 0; i < rtop; i++) {
+                mask = (BN_ULONG)0 - ((i - ntop) >> (8 * sizeof(i) - 1));
+                n->d[i] &= mask;
+            }
+            mask = (BN_ULONG)0 - ((rtop - ntop) >> (8 * sizeof(ntop) - 1));
+            /* always true, if (rtop >= ntop) n->top = r->top; */
+            n->top = (int)(rtop & ~mask) | (ntop & mask);
+            n->flags |= (BN_FLG_FIXED_TOP & ~mask);
         }
-        ret = BN_mod_mul(n, n, b->Ai, b->mod, ctx);
+        ret = bn_mul_mont_fixed_top(n, n, r, b->m_ctx, ctx);
+        bn_correct_top_consttime(n);
+    } else {
+        ret = BN_mod_mul(n, n, r, b->mod, ctx);
     }
 
     bn_check_top(n);
-    return (ret);
+    return ret;
 }
 
 int BN_BLINDING_is_current_thread(BN_BLINDING *b)
@@ -212,14 +229,14 @@ void BN_BLINDING_set_flags(BN_BLINDING *b, unsigned long flags)
 }
 
 BN_BLINDING *BN_BLINDING_create_param(BN_BLINDING *b,
-                                      const BIGNUM *e, BIGNUM *m, BN_CTX *ctx,
-                                      int (*bn_mod_exp) (BIGNUM *r,
-                                                         const BIGNUM *a,
-                                                         const BIGNUM *p,
-                                                         const BIGNUM *m,
-                                                         BN_CTX *ctx,
-                                                         BN_MONT_CTX *m_ctx),
-                                      BN_MONT_CTX *m_ctx)
+    const BIGNUM *e, BIGNUM *m, BN_CTX *ctx,
+    int (*bn_mod_exp)(BIGNUM *r,
+        const BIGNUM *a,
+        const BIGNUM *p,
+        const BIGNUM *m,
+        BN_CTX *ctx,
+        BN_MONT_CTX *m_ctx),
+    BN_MONT_CTX *m_ctx)
 {
     int retry_counter = 32;
     BN_BLINDING *ret = NULL;
@@ -251,35 +268,39 @@ BN_BLINDING *BN_BLINDING_create_param(BN_BLINDING *b,
 
     do {
         int rv;
-        if (!BN_rand_range(ret->A, ret->mod))
+        if (!BN_priv_rand_range_ex(ret->A, ret->mod, 0, ctx))
             goto err;
-        if (!int_bn_mod_inverse(ret->Ai, ret->A, ret->mod, ctx, &rv)) {
-            /*
-             * this should almost never happen for good RSA keys
-             */
-            if (rv) {
-                if (retry_counter-- == 0) {
-                    BNerr(BN_F_BN_BLINDING_CREATE_PARAM,
-                          BN_R_TOO_MANY_ITERATIONS);
-                    goto err;
-                }
-            } else
-                goto err;
-        } else
+        if (int_bn_mod_inverse(ret->Ai, ret->A, ret->mod, ctx, &rv))
             break;
+
+        /*
+         * this should almost never happen for good RSA keys
+         */
+        if (!rv)
+            goto err;
+
+        if (retry_counter-- == 0) {
+            ERR_raise(ERR_LIB_BN, BN_R_TOO_MANY_ITERATIONS);
+            goto err;
+        }
     } while (1);
 
     if (ret->bn_mod_exp != NULL && ret->m_ctx != NULL) {
-        if (!ret->bn_mod_exp
-            (ret->A, ret->A, ret->e, ret->mod, ctx, ret->m_ctx))
+        if (!ret->bn_mod_exp(ret->A, ret->A, ret->e, ret->mod, ctx, ret->m_ctx))
             goto err;
     } else {
         if (!BN_mod_exp(ret->A, ret->A, ret->e, ret->mod, ctx))
             goto err;
     }
 
+    if (ret->m_ctx != NULL) {
+        if (!bn_to_mont_fixed_top(ret->Ai, ret->Ai, ret->m_ctx, ctx)
+            || !bn_to_mont_fixed_top(ret->A, ret->A, ret->m_ctx, ctx))
+            goto err;
+    }
+
     return ret;
- err:
+err:
     if (b == NULL) {
         BN_BLINDING_free(ret);
         ret = NULL;

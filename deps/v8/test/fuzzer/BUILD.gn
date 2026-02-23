@@ -2,32 +2,33 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../gni/v8.gni")
+
 group("v8_fuzzer") {
   testonly = true
 
   data_deps = [
-    "../../tools:v8_testrunner",
     "../..:v8_fuzzers",
+    "../../tools:v8_testrunner",
   ]
 
   data = [
     "./fuzzer.status",
     "./testcfg.py",
+    "./inspector/",
     "./json/",
     "./parser/",
     "./regexp/",
-    "./regexp_builtins/",
-    "./multi_return/",
-    "./wasm/",
-    "./wasm_async/",
-    "./wasm_code/",
-    "./wasm_compile/",
-    "./wasm_data_section/",
-    "./wasm_function_sigs_section/",
-    "./wasm_globals_section/",
-    "./wasm_imports_section/",
-    "./wasm_memory_section/",
-    "./wasm_names_section/",
-    "./wasm_types_section/",
   ]
+
+  if (v8_enable_webassembly) {
+    data += [
+      "./multi_return/",
+      "./wasm/async/",
+      "./wasm/code/",
+      "./wasm/compile/",
+      "./wasm/module/",
+      "./wasm/streaming/",
+    ]
+  }
 }

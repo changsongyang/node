@@ -1,14 +1,14 @@
 /*
  * Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
 #include "internal/cryptlib.h"
-#include "bn_lcl.h"
+#include "bn_local.h"
 
 BN_ULONG BN_mod_word(const BIGNUM *a, BN_ULONG w)
 {
@@ -51,11 +51,10 @@ BN_ULONG BN_mod_word(const BIGNUM *a, BN_ULONG w)
         ret = ((ret << BN_BITS4) | ((a->d[i] >> BN_BITS4) & BN_MASK2l)) % w;
         ret = ((ret << BN_BITS4) | (a->d[i] & BN_MASK2l)) % w;
 #else
-        ret = (BN_ULLONG) (((ret << (BN_ULLONG) BN_BITS2) | a->d[i]) %
-                           (BN_ULLONG) w);
+        ret = (BN_ULLONG)(((ret << (BN_ULLONG)BN_BITS2) | a->d[i]) % (BN_ULLONG)w);
 #endif
     }
-    return ((BN_ULONG)ret);
+    return (BN_ULONG)ret;
 }
 
 BN_ULONG BN_div_word(BIGNUM *a, BN_ULONG w)
@@ -92,7 +91,7 @@ BN_ULONG BN_div_word(BIGNUM *a, BN_ULONG w)
     if (!a->top)
         a->neg = 0; /* don't allow negative zero */
     bn_check_top(a);
-    return (ret);
+    return ret;
 }
 
 int BN_add_word(BIGNUM *a, BN_ULONG w)
@@ -115,7 +114,7 @@ int BN_add_word(BIGNUM *a, BN_ULONG w)
         i = BN_sub_word(a, w);
         if (!BN_is_zero(a))
             a->neg = !(a->neg);
-        return (i);
+        return i;
     }
     for (i = 0; w != 0 && i < a->top; i++) {
         a->d[i] = l = (a->d[i] + w) & BN_MASK2;
@@ -128,7 +127,7 @@ int BN_add_word(BIGNUM *a, BN_ULONG w)
         a->d[i] = w;
     }
     bn_check_top(a);
-    return (1);
+    return 1;
 }
 
 int BN_sub_word(BIGNUM *a, BN_ULONG w)
@@ -153,13 +152,13 @@ int BN_sub_word(BIGNUM *a, BN_ULONG w)
         a->neg = 0;
         i = BN_add_word(a, w);
         a->neg = 1;
-        return (i);
+        return i;
     }
 
     if ((a->top == 1) && (a->d[0] < w)) {
         a->d[0] = w - a->d[0];
         a->neg = 1;
-        return (1);
+        return 1;
     }
     i = 0;
     for (;;) {
@@ -175,7 +174,7 @@ int BN_sub_word(BIGNUM *a, BN_ULONG w)
     if ((a->d[i] == 0) && (i == (a->top - 1)))
         a->top--;
     bn_check_top(a);
-    return (1);
+    return 1;
 }
 
 int BN_mul_word(BIGNUM *a, BN_ULONG w)
@@ -191,11 +190,11 @@ int BN_mul_word(BIGNUM *a, BN_ULONG w)
             ll = bn_mul_words(a->d, a->d, a->top, w);
             if (ll) {
                 if (bn_wexpand(a, a->top + 1) == NULL)
-                    return (0);
+                    return 0;
                 a->d[a->top++] = ll;
             }
         }
     }
     bn_check_top(a);
-    return (1);
+    return 1;
 }

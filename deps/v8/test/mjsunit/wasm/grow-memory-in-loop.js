@@ -2,21 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm --stress-compaction
+// Flags: --stress-compaction
 
-load('test/mjsunit/wasm/wasm-constants.js');
-load('test/mjsunit/wasm/wasm-module-builder.js');
+d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 let initialPages = 1;
 let maximumPages = 6;
 
 function generateBuilder() {
   let builder = new WasmModuleBuilder();
-  builder.addMemory(initialPages, maximumPages, true);
+  builder.addMemory(initialPages, maximumPages);
   builder.addFunction('store', kSig_i_ii)
       .addBody([
-        kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem, 0, 0,
-        kExprGetLocal, 1
+        kExprLocalGet, 0, kExprLocalGet, 1, kExprI32StoreMem, 0, 0,
+        kExprLocalGet, 1
       ])
       .exportFunc();
   return builder;
@@ -24,25 +23,25 @@ function generateBuilder() {
 
 // This test verifies that the effects of growing memory inside a loop
 // affect the result of current_memory when the loop is over.
-(function TestGrowMemoryInsideLoop() {
-  print('TestGrowMemoryInsideLoop ...');
+(function TestMemoryGrowInsideLoop() {
+  print('TestMemoryGrowInsideLoop ...');
   let deltaPages = 1;
   let builder = generateBuilder();
   builder.addFunction('main', kSig_i_i)
       .addBody([
         // clang-format off
-        kExprLoop, kWasmStmt,                   // while
-          kExprGetLocal, 0,                     // -
-          kExprIf, kWasmStmt,                   // if <param0> != 0
+        kExprLoop, kWasmVoid,                   // while
+          kExprLocalGet, 0,                     // -
+          kExprIf, kWasmVoid,                   // if <param0> != 0
             // Grow memory.
             kExprI32Const, deltaPages,          // -
-            kExprGrowMemory, kMemoryZero,       // grow memory
+            kExprMemoryGrow, kMemoryZero,       // grow memory
             kExprDrop,                          // drop the result of grow
             // Decrease loop variable.
-            kExprGetLocal, 0,                   // -
+            kExprLocalGet, 0,                   // -
             kExprI32Const, 1,                   // -
             kExprI32Sub,                        // -
-            kExprSetLocal, 0,                   // decrease <param0>
+            kExprLocalSet, 0,                   // decrease <param0>
             kExprBr, 1,                         // continue
           kExprEnd,                             // end if
         kExprEnd,                               // end loop
@@ -71,8 +70,8 @@ function generateBuilder() {
 
 // This test verifies that a loop does not affect the result of current_memory
 // when the memory is grown both inside and outside the loop.
-(function TestGrowMemoryInsideAndOutsideLoop() {
-  print('TestGrowMemoryInsideAndOutsideLoop ...');
+(function TestMemoryGrowInsideAndOutsideLoop() {
+  print('TestMemoryGrowInsideAndOutsideLoop ...');
   let deltaPagesIn = 1;
   let deltaPagesOut = 2;
   let builder = generateBuilder();
@@ -81,20 +80,20 @@ function generateBuilder() {
         // clang-format off
         // Grow memory.
         kExprI32Const, deltaPagesOut,           // -
-        kExprGrowMemory, kMemoryZero,           // grow memory
+        kExprMemoryGrow, kMemoryZero,           // grow memory
         kExprDrop,                              // drop the result of grow
-        kExprLoop, kWasmStmt,                   // while
-          kExprGetLocal, 0,                     // -
-          kExprIf, kWasmStmt,                   // if <param0> != 0
+        kExprLoop, kWasmVoid,                   // while
+          kExprLocalGet, 0,                     // -
+          kExprIf, kWasmVoid,                   // if <param0> != 0
             // Grow memory.
             kExprI32Const, deltaPagesIn,        // -
-            kExprGrowMemory, kMemoryZero,       // grow memory
+            kExprMemoryGrow, kMemoryZero,       // grow memory
             kExprDrop,                          // drop the result of grow
             // Decrease loop variable.
-            kExprGetLocal, 0,                   // -
+            kExprLocalGet, 0,                   // -
             kExprI32Const, 1,                   // -
             kExprI32Sub,                        // -
-            kExprSetLocal, 0,                   // decrease <param0>
+            kExprLocalSet, 0,                   // decrease <param0>
             kExprBr, 1,                         // continue
           kExprEnd,                             // end if
         kExprEnd,                               // end loop
@@ -125,37 +124,37 @@ function generateBuilder() {
 
 // This test verifies that the effects of writing to memory grown inside a loop
 // are retained when the loop is over.
-(function TestGrowMemoryAndStoreInsideLoop() {
-  print('TestGrowMemoryAndStoreInsideLoop ...');
+(function TestMemoryGrowAndStoreInsideLoop() {
+  print('TestMemoryGrowAndStoreInsideLoop ...');
   let deltaPages = 1;
   let builder = generateBuilder();
   builder.addFunction('main', kSig_i_ii)
       .addBody([
         // clang-format off
-        kExprLoop, kWasmStmt,                   // while
-          kExprGetLocal, 0,                     // -
-          kExprIf, kWasmStmt,                   // if <param0> != 0
+        kExprLoop, kWasmVoid,                   // while
+          kExprLocalGet, 0,                     // -
+          kExprIf, kWasmVoid,                   // if <param0> != 0
             // Grow memory.
             kExprI32Const, deltaPages,          // -
-            kExprGrowMemory, kMemoryZero,       // grow memory
+            kExprMemoryGrow, kMemoryZero,       // grow memory
             kExprDrop,                          // drop the result of grow
             // Increase counter in memory.
-            kExprGetLocal, 1,                   // put index (for store)
-                kExprGetLocal, 1,               // put index (for load)
+            kExprLocalGet, 1,                   // put index (for store)
+                kExprLocalGet, 1,               // put index (for load)
                 kExprI32LoadMem, 0, 0,          // load from grown memory
               kExprI32Const, 1,                 // -
               kExprI32Add,                      // increase counter
             kExprI32StoreMem, 0, 0,             // store counter in memory
             // Decrease loop variable.
-            kExprGetLocal, 0,                   // -
+            kExprLocalGet, 0,                   // -
             kExprI32Const, 1,                   // -
             kExprI32Sub,                        // -
-            kExprSetLocal, 0,                   // decrease <param0>
+            kExprLocalSet, 0,                   // decrease <param0>
             kExprBr, 1,                         // continue
           kExprEnd,                             // end if
         kExprEnd,                               // end loop
         // Increase counter in memory.
-        kExprGetLocal, 1,                       // -
+        kExprLocalGet, 1,                       // -
         kExprI32LoadMem, 0, 0                   // load from grown memory
         // clang-format on
       ])
@@ -183,8 +182,8 @@ function generateBuilder() {
 
 // This test verifies that a loop does not affect the memory when the
 // memory is grown both inside and outside the loop.
-(function TestGrowMemoryAndStoreInsideAndOutsideLoop() {
-  print('TestGrowMemoryAndStoreInsideAndOutsideLoop ...');
+(function TestMemoryGrowAndStoreInsideAndOutsideLoop() {
+  print('TestMemoryGrowAndStoreInsideAndOutsideLoop ...');
   let deltaPagesIn = 1;
   let deltaPagesOut = 2;
   let builder = generateBuilder();
@@ -193,40 +192,40 @@ function generateBuilder() {
         // clang-format off
         // Grow memory.
         kExprI32Const, deltaPagesOut,           // -
-        kExprGrowMemory, kMemoryZero,           // grow memory
+        kExprMemoryGrow, kMemoryZero,           // grow memory
         kExprDrop,                              // drop the result of grow
         // Increase counter in memory.
-        kExprGetLocal, 1,                       // put index (for store)
-            kExprGetLocal, 1,                   // put index (for load)
+        kExprLocalGet, 1,                       // put index (for store)
+            kExprLocalGet, 1,                   // put index (for load)
             kExprI32LoadMem, 0, 0,              // load from grown memory
           kExprI32Const, 1,                     // -
           kExprI32Add,                          // increase value on stack
         kExprI32StoreMem, 0, 0,                 // store new value
         // Start loop.
-        kExprLoop, kWasmStmt,                   // while
-          kExprGetLocal, 0,                     // -
-          kExprIf, kWasmStmt,                   // if <param0> != 0
+        kExprLoop, kWasmVoid,                   // while
+          kExprLocalGet, 0,                     // -
+          kExprIf, kWasmVoid,                   // if <param0> != 0
             // Grow memory.
             kExprI32Const, deltaPagesIn,        // -
-            kExprGrowMemory, kMemoryZero,       // grow memory
+            kExprMemoryGrow, kMemoryZero,       // grow memory
             kExprDrop,                          // drop the result of grow
             // Increase counter in memory.
-            kExprGetLocal, 1,                   // put index (for store)
-                kExprGetLocal, 1,               // put index (for load)
+            kExprLocalGet, 1,                   // put index (for store)
+                kExprLocalGet, 1,               // put index (for load)
                 kExprI32LoadMem, 0, 0,          // load from grown memory
               kExprI32Const, 1,                 // -
               kExprI32Add,                      // increase value on stack
             kExprI32StoreMem, 0, 0,             // store new value
             // Decrease loop variable.
-            kExprGetLocal, 0,                   // -
+            kExprLocalGet, 0,                   // -
             kExprI32Const, 1,                   // -
             kExprI32Sub,                        // -
-            kExprSetLocal, 0,                   // decrease <param0>
+            kExprLocalSet, 0,                   // decrease <param0>
             kExprBr, 1,                         // continue
           kExprEnd,                             // end if
         kExprEnd,                               // end loop
         // Return counter from memory.
-        kExprGetLocal, 1,                       // put index on stack
+        kExprLocalGet, 1,                       // put index on stack
         kExprI32LoadMem, 0, 0                   // load from grown memory
         // clang-format on
       ])

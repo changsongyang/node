@@ -25,32 +25,39 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from __future__ import print_function
+
 import test
 import os
-from os.path import join, exists, basename, isdir
+from os.path import join, exists, basename, dirname, isdir
 import re
+import sys
 import utils
+from functools import reduce
 
 FLAGS_PATTERN = re.compile(r"//\s+Flags:(.*)")
+PTY_HELPER = join(dirname(__file__), '../../tools/pseudo-tty.py')
+ENV_PATTERN = re.compile(r"//\s+Env:(.*)")
 
 class TTYTestCase(test.TestCase):
 
-  def __init__(self, path, file, expected, input, arch, mode, context, config):
+  def __init__(self, path, file, expected, input_arg, arch, mode, context, config):
     super(TTYTestCase, self).__init__(context, path, arch, mode)
     self.file = file
     self.expected = expected
-    self.input = input
+    self.input = input_arg
     self.config = config
     self.arch = arch
     self.mode = mode
+    self.parallel = True
 
-  def IgnoreLine(self, str):
+  def IgnoreLine(self, str_arg):
     """Ignore empty lines and valgrind output."""
-    if not str.strip(): return True
-    else: return str.startswith('==') or str.startswith('**')
+    if not str_arg.strip(): return True
+    else: return str_arg.startswith('==') or str_arg.startswith('**')
 
   def IsFailureOutput(self, output):
-    f = file(self.expected)
+    f = open(self.expected)
     # Convert output lines to regexps that we can match
     env = { 'basename': basename(self.file) }
     patterns = [ ]
@@ -63,26 +70,35 @@ class TTYTestCase(test.TestCase):
       patterns.append(pattern)
     # Compare actual output with the expected
     raw_lines = (output.stdout + output.stderr).split('\n')
-    outlines = [ s.strip() for s in raw_lines if not self.IgnoreLine(s) ]
+    outlines = [ s.rstrip() for s in raw_lines if not self.IgnoreLine(s) ]
     if len(outlines) != len(patterns):
-      print "length differs."
-      print "expect=%d" % len(patterns)
-      print "actual=%d" % len(outlines)
-      print "patterns:"
-      for i in xrange(len(patterns)):
-        print "pattern = %s" % patterns[i]
-      print "outlines:"
-      for i in xrange(len(outlines)):
-        print "outline = %s" % outlines[i]
+      print(" length differs.")
+      print("expect=%d" % len(patterns))
+      print("actual=%d" % len(outlines))
+      print("patterns:")
+      for i in range(len(patterns)):
+        print("pattern = %s" % patterns[i])
+      print("outlines:")
+      for i in range(len(outlines)):
+        print("outline = %s" % outlines[i])
       return True
-    for i in xrange(len(patterns)):
+    for i in range(len(patterns)):
       if not re.match(patterns[i], outlines[i]):
-        print "match failed"
-        print "line=%d" % i
-        print "expect=%s" % patterns[i]
-        print "actual=%s" % outlines[i]
+        print(" match failed")
+        print("line=%d" % i)
+        print("expect=%s" % patterns[i])
+        print("actual=%s" % outlines[i])
         return True
     return False
+
+  def _parse_source_env(self, source):
+    env_match = ENV_PATTERN.search(source)
+    env = {}
+    if env_match:
+      for env_pair in env_match.group(1).strip().split():
+        var, value = env_pair.split('=')
+        env[var] = value
+    return env
 
   def GetLabel(self):
     return "%s %s" % (self.mode, self.GetName())
@@ -90,14 +106,18 @@ class TTYTestCase(test.TestCase):
   def GetName(self):
     return self.path[-1]
 
-  def GetCommand(self):
+  def GetRunConfiguration(self):
     result = [self.config.context.GetVm(self.arch, self.mode)]
     source = open(self.file).read()
     flags_match = FLAGS_PATTERN.search(source)
+    envs = self._parse_source_env(source)
     if flags_match:
       result += flags_match.group(1).strip().split()
     result.append(self.file)
-    return result
+    return {
+        'command': result,
+        'envs': envs
+    }
 
   def GetSource(self):
     return (open(self.file).read()
@@ -105,16 +125,18 @@ class TTYTestCase(test.TestCase):
           + open(self.expected).read())
 
   def RunCommand(self, command, env):
-    input = None
+    fd = None
     if self.input is not None and exists(self.input):
-      input = open(self.input).read()
+      fd = os.open(self.input, os.O_RDONLY)
     full_command = self.context.processor(command)
+    full_command = [sys.executable, PTY_HELPER] + full_command
     output = test.Execute(full_command,
                      self.context,
                      self.context.GetTimeout(self.mode),
                      env,
-                     faketty=True,
-                     input=input)
+                     stdin=fd)
+    if fd is not None:
+      os.close(fd)
     return test.TestOutput(self,
                       full_command,
                       output,
@@ -136,15 +158,15 @@ class TTYTestConfiguration(test.TestConfiguration):
       print ("Skipping pseudo-tty tests, as pseudo terminals are not available"
              " on Windows.")
       return result
-    for test in all_tests:
-      if self.Contains(path, test):
-        file_prefix = join(self.root, reduce(join, test[1:], ""))
+    for tst in all_tests:
+      if self.Contains(path, tst):
+        file_prefix = join(self.root, reduce(join, tst[1:], ""))
         file_path = file_prefix + ".js"
         input_path = file_prefix + ".in"
         output_path = file_prefix + ".out"
         if not exists(output_path):
           raise Exception("Could not find %s" % output_path)
-        result.append(TTYTestCase(test, file_path, output_path,
+        result.append(TTYTestCase(tst, file_path, output_path,
                                   input_path, arch, mode, self.context, self))
     return result
 

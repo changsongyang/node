@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc --opt --no-always-opt
+// Flags: --allow-natives-syntax --expose-gc --turbofan
 
 var elements_kind = {
   fast_smi_only            :  'fast smi only elements',
@@ -104,6 +104,8 @@ function get_standard_literal() {
   var literal = [1, 2, 3];
   return literal;
 }
+
+%PrepareFunctionForOptimization(get_standard_literal);
 
 // Case: [1,2,3] as allocation site
 obj = fastliteralcase(get_standard_literal(), 1);
@@ -212,7 +214,7 @@ assertKind(elements_kind.fast_double, obj);
 
 // Try to continue the transition to fast object.
 // TODO(mvstanton): re-enable commented out code when
-// FLAG_pretenuring_call_new is turned on in the build.
+// v8_flags.pretenuring_call_new is turned on in the build.
 obj = newarraycase_length_smidouble("coates");
 assertKind(elements_kind.fast, obj);
 obj = newarraycase_length_smidouble(2);
@@ -321,6 +323,8 @@ function instanceof_check2(type) {
   assertTrue(new type(1,2,3) instanceof type);
 }
 
+%PrepareFunctionForOptimization(instanceof_check);
+
 var realmBArray = Realm.eval(realmB, "Array");
 // Two calls with Array because ES6 instanceof desugars into a load of Array,
 // and load has a premonomorphic state.
@@ -354,10 +358,12 @@ assertOptimized(instanceof_check);
 // Try to optimize again, but first clear all type feedback, and allow it
 // to be monomorphic on first call. Only after optimizing do we introduce
 // realmBArray. This should deopt the method.
+  %PrepareFunctionForOptimization(instanceof_check);
   %DeoptimizeFunction(instanceof_check);
   %ClearFunctionFeedback(instanceof_check);
 instanceof_check(Array);
 instanceof_check(Array);
+  %PrepareFunctionForOptimization(instanceof_check);
   %OptimizeFunctionOnNextCall(instanceof_check);
 instanceof_check(Array);
 assertOptimized(instanceof_check);

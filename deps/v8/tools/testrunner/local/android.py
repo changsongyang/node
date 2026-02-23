@@ -9,17 +9,25 @@ Wrapper around the Android device abstraction from src/build/android.
 import logging
 import os
 import sys
+import re
 
+from pathlib import Path
 
 BASE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 ANDROID_DIR = os.path.join(BASE_DIR, 'build', 'android')
 DEVICE_DIR = '/data/local/tmp/v8/'
 
+FILTER_LINES_EXPRESSIONS = [
+  r'WARNING: linker: .+ unsupported flags DT_FLAGS_1=0x8000001',
+  r'WARNING: linker: .+ unused DT entry:.*type 0x70000001 arg 0x0.*',
+]
+FILTER_LINES_EXPRESSIONS = [re.compile(exp) for exp in FILTER_LINES_EXPRESSIONS]
 
 class TimeoutException(Exception):
-  def __init__(self, timeout):
+  def __init__(self, timeout, output=None):
     self.timeout = timeout
+    self.output = output
 
 
 class CommandFailedException(Exception):
@@ -28,7 +36,15 @@ class CommandFailedException(Exception):
     self.output = output
 
 
-class _Driver(object):
+class Driver(object):
+  __instance = None
+
+  @staticmethod
+  def instance(device):
+    if not Driver.__instance:
+      Driver.__instance = Driver(device)
+    return Driver.__instance
+
   """Helper class to execute shell commands on an Android device."""
   def __init__(self, device=None):
     assert os.path.exists(ANDROID_DIR)
@@ -41,21 +57,21 @@ class _Driver(object):
     from devil.android import device_utils  # pylint: disable=import-error
     from devil.android.perf import cache_control  # pylint: disable=import-error
     from devil.android.perf import perf_control  # pylint: disable=import-error
-    from devil.android.sdk import adb_wrapper  # pylint: disable=import-error
     global cache_control
     global device_errors
     global perf_control
 
     devil_chromium.Initialize()
 
-    if not device:
-      # Detect attached device if not specified.
-      devices = adb_wrapper.AdbWrapper.Devices()
-      assert devices, 'No devices detected'
-      assert len(devices) == 1, 'Multiple devices detected.'
-      device = str(devices[0])
-    self.adb_wrapper = adb_wrapper.AdbWrapper(device)
-    self.device = device_utils.DeviceUtils(self.adb_wrapper)
+    # Find specified device or a single attached device if none was specified.
+    # In case none or multiple devices are attached, this raises an exception.
+    self.device = device_utils.DeviceUtils.HealthyDevices(
+        retries=5, enable_usb_resets=True, device_arg=device)[0]
+
+    # Retrieve device parameters.
+    product_prop = 'getprop ro.build.product'
+    self.device_type = self.device.adb.Shell(product_prop).rstrip('\n')
+    assert self.device_type, 'No device type found in android environment.'
 
     # This remembers what we have already pushed to the device.
     self.pushed = set()
@@ -76,6 +92,8 @@ class _Driver(object):
       skip_if_missing: Keeps silent about missing files when set. Otherwise logs
           error.
     """
+    # TODO(sergiyb): Implement this method using self.device.PushChangedFiles to
+    # avoid accessing low-level self.device.adb.
     file_on_host = os.path.join(host_dir, file_name)
 
     # Only push files not yet pushed in one execution.
@@ -94,14 +112,21 @@ class _Driver(object):
 
     # Work-around for 'text file busy' errors. Push the files to a temporary
     # location and then copy them with a shell command.
-    output = self.adb_wrapper.Push(file_on_host, file_on_device_tmp)
+    output = self.device.adb.Push(file_on_host, file_on_device_tmp)
     # Success looks like this: '3035 KB/s (12512056 bytes in 4.025s)'.
     # Errors look like this: 'failed to copy  ... '.
     if output and not re.search('^[0-9]', output.splitlines()[-1]):
       logging.critical('PUSH FAILED: ' + output)
-    self.adb_wrapper.Shell('mkdir -p %s' % folder_on_device)
-    self.adb_wrapper.Shell('cp %s %s' % (file_on_device_tmp, file_on_device))
+    self.device.adb.Shell('mkdir -p %s' % folder_on_device)
+    self.device.adb.Shell('cp %s %s' % (file_on_device_tmp, file_on_device))
     self.pushed.add(file_on_host)
+
+  def push_files_rec(self, host_dir, target_rel='.'):
+    """As above, but push the whole directory tree under host_dir."""
+    root = Path(host_dir)
+    for entry in root.rglob('*'):
+      if entry.is_file():
+        self.push_file(host_dir, entry.relative_to(root), target_rel)
 
   def push_executable(self, shell_dir, target_dir, binary):
     """Push files required to run a V8 executable.
@@ -130,16 +155,16 @@ class _Driver(object):
     )
     self.push_file(
         shell_dir,
-        'snapshot_blob_trusted.bin',
-        target_dir,
-        skip_if_missing=True,
-    )
-    self.push_file(
-        shell_dir,
         'icudtl.dat',
         target_dir,
         skip_if_missing=True,
     )
+
+  def filter_line(self, line):
+    for exp in FILTER_LINES_EXPRESSIONS:
+      if exp.match(line):
+        return False
+    return True
 
   def run(self, target_dir, binary, args, rel_path, timeout, env=None,
           logcat_file=False):
@@ -167,11 +192,12 @@ class _Driver(object):
             timeout=timeout,
             retries=0,
         )
-        return '\n'.join(output)
+        # Return output without linker warnings (https://crbug.com/1454414).
+        return '\n'.join(filter(self.filter_line, output))
       except device_errors.AdbCommandFailedError as e:
         raise CommandFailedException(e.status, e.output)
-      except device_errors.CommandTimeoutError:
-        raise TimeoutException(timeout)
+      except device_errors.CommandTimeoutError as e:
+        raise TimeoutException(timeout, e.output)
 
 
     if logcat_file:
@@ -196,12 +222,3 @@ class _Driver(object):
     """Set device into default performance mode."""
     perf = perf_control.PerfControl(self.device)
     perf.SetDefaultPerfMode()
-
-
-_ANDROID_DRIVER = None
-def android_driver(device=None):
-  """Singleton access method to the driver class."""
-  global _ANDROID_DRIVER
-  if not _ANDROID_DRIVER:
-    _ANDROID_DRIVER = _Driver(device)
-  return _ANDROID_DRIVER

@@ -470,7 +470,8 @@
     assertEquals(4, f());
   }
 
-  assertEquals(4, f());
+  // B.3.2.6 Changes to BlockDeclarationInstantiation
+  assertEquals(5, f());
 })();
 
 // B.3.5 interacts with B.3.3 to allow this.
@@ -494,6 +495,32 @@
   }
 
   assertEquals(4, f());
+})();
+
+(function noHoistingIfLetOutsideSimpleCatch() {
+  assertThrows(()=>f, ReferenceError);
+
+  let f = 2;
+
+  assertEquals(2, f);
+
+  try {
+    throw 0;
+  } catch (f) {
+    {
+      assertEquals(4, f());
+
+      function f() {
+        return 4;
+      }
+
+      assertEquals(4, f());
+    }
+
+    assertEquals(0, f);
+  }
+
+  assertEquals(2, f);
 })();
 
 (function noHoistingThroughComplexCatch() {
@@ -620,15 +647,12 @@ eval(`
       return 4;
     } }`);
 
-    // assertEquals(0, f);
-    assertEquals(4, f());
+    assertEquals(0, f);
   }
 
-  // assertEquals(4, f());
-  assertEquals(undefined, f);
+  assertEquals(4, f());
 })();
 
-// This test is incorrect BUG(v8:5168). The commented assertions are correct.
 (function evalHoistingThroughWith() {
   with ({f: 0}) {
     eval(`{ function f() {

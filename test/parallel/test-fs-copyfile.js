@@ -10,9 +10,8 @@ const {
   UV_ENOENT,
   UV_EEXIST
 } = internalBinding('uv');
-const path = require('path');
 const src = fixtures.path('a.js');
-const dest = path.join(tmpdir.path, 'copyfile.out');
+const dest = tmpdir.resolve('copyfile.out');
 const {
   COPYFILE_EXCL,
   COPYFILE_FICLONE,
@@ -76,8 +75,7 @@ try {
 
 // Copies asynchronously.
 tmpdir.refresh(); // Don't use unlinkSync() since the last test may fail.
-fs.copyFile(src, dest, common.mustCall((err) => {
-  assert.ifError(err);
+fs.copyFile(src, dest, common.mustSucceed(() => {
   verify(src, dest);
 
   // Copy asynchronously with flags.
@@ -101,41 +99,68 @@ fs.copyFile(src, dest, common.mustCall((err) => {
 }));
 
 // Throws if callback is not a function.
-common.expectsError(() => {
+assert.throws(() => {
   fs.copyFile(src, dest, 0, 0);
 }, {
-  code: 'ERR_INVALID_CALLBACK',
-  type: TypeError
+  code: 'ERR_INVALID_ARG_TYPE',
+  name: 'TypeError'
 });
 
 // Throws if the source path is not a string.
 [false, 1, {}, [], null, undefined].forEach((i) => {
-  common.expectsError(
+  assert.throws(
     () => fs.copyFile(i, dest, common.mustNotCall()),
     {
       code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
+      name: 'TypeError',
+      message: /src/
     }
   );
-  common.expectsError(
+  assert.throws(
     () => fs.copyFile(src, i, common.mustNotCall()),
     {
       code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
+      name: 'TypeError',
+      message: /dest/
     }
   );
-  common.expectsError(
+  assert.throws(
     () => fs.copyFileSync(i, dest),
     {
       code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
+      name: 'TypeError',
+      message: /src/
     }
   );
-  common.expectsError(
+  assert.throws(
     () => fs.copyFileSync(src, i),
     {
       code: 'ERR_INVALID_ARG_TYPE',
-      type: TypeError
+      name: 'TypeError',
+      message: /dest/
     }
   );
+});
+
+assert.throws(() => {
+  fs.copyFileSync(src, dest, 'r');
+}, {
+  code: 'ERR_INVALID_ARG_TYPE',
+  name: 'TypeError',
+  message: /mode/
+});
+
+assert.throws(() => {
+  fs.copyFileSync(src, dest, 8);
+}, {
+  code: 'ERR_OUT_OF_RANGE',
+  name: 'RangeError',
+});
+
+assert.throws(() => {
+  fs.copyFile(src, dest, 'r', common.mustNotCall());
+}, {
+  code: 'ERR_INVALID_ARG_TYPE',
+  name: 'TypeError',
+  message: /mode/
 });

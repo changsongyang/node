@@ -25,8 +25,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --always-inline-smi-code
-
 const SMI_MAX = (1 << 30) - 1;
 const SMI_MIN = -(1 << 30);
 const ONE = 1;
@@ -436,7 +434,7 @@ function testShiftNonSmis() {
   assertEquals(0x46536000, (neg_32 + neg_smi - 0.5) << 4);
   assertEquals(-0x73594000, (neg_32 + neg_smi - 0.5) << 5);
   // End block A repeat 1
-  // Repeat block A with shift amounts in variables intialized with
+  // Repeat block A with shift amounts in variables initialized with
   // a constant.
   var zero = 0;
   var one = 1;

@@ -25,13 +25,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
+#include "src/codegen/macro-assembler-inl.h"
+#include "src/execution/arm64/simulator-arm64.h"
+#include "src/objects/objects-inl.h"
 #include "test/cctest/cctest.h"
-
-#include "src/arm64/simulator-arm64.h"
-#include "src/heap/factory.h"
-#include "src/macro-assembler-inl.h"
-#include "src/objects-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -195,21 +192,20 @@ void TestInvalidateExclusiveAccess(TestData initial_data, MemoryAccess access1,
                                    int expected_res, TestData expected_data) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
-  MacroAssembler masm(isolate, nullptr, 0,
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler masm(isolate, v8::internal::CodeObjectRequired::kYes);
 
   AssembleLoadExcl(&masm, access1, w1, x1);
   AssembleMemoryAccess(&masm, access2, w3, w2, x1);
   AssembleStoreExcl(&masm, access3, w0, w3, x1);
-  __ br(lr);
+  __ Ret();
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 
   TestData t = initial_data;
-  Simulator::current(isolate)->Call<void>(code->entry(), &t);
+  Simulator::current(isolate)->Call<void>(code->instruction_start(), &t);
   int res = Simulator::current(isolate)->wreg(0);
 
   CHECK_EQ(expected_res, res);
@@ -271,16 +267,15 @@ namespace {
 int ExecuteMemoryAccess(Isolate* isolate, TestData* test_data,
                         MemoryAccess access) {
   HandleScope scope(isolate);
-  MacroAssembler masm(isolate, nullptr, 0,
-                      v8::internal::CodeObjectRequired::kYes);
+  MacroAssembler masm(isolate, v8::internal::CodeObjectRequired::kYes);
   AssembleMemoryAccess(&masm, access, w0, w2, x1);
-  __ br(lr);
+  __ Ret();
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
-  Simulator::current(isolate)->Call<void>(code->entry(), test_data);
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
+  Simulator::current(isolate)->Call<void>(code->instruction_start(), test_data);
   return Simulator::current(isolate)->wreg(0);
 }
 
@@ -303,7 +298,7 @@ class MemoryAccessThread : public v8::base::Thread {
     Isolate* i_isolate = reinterpret_cast<Isolate*>(isolate_);
     {
       v8::Isolate::Scope scope(isolate_);
-      v8::base::LockGuard<v8::base::Mutex> lock_guard(&mutex_);
+      v8::base::MutexGuard lock_guard(&mutex_);
       while (!is_finished_) {
         while (!(has_request_ || is_finished_)) {
           has_request_cv_.Wait(&mutex_);
@@ -324,7 +319,7 @@ class MemoryAccessThread : public v8::base::Thread {
 
   void NextAndWait(TestData* test_data, MemoryAccess access) {
     DCHECK(!has_request_);
-    v8::base::LockGuard<v8::base::Mutex> lock_guard(&mutex_);
+    v8::base::MutexGuard lock_guard(&mutex_);
     test_data_ = test_data;
     access_ = access;
     has_request_ = true;
@@ -336,7 +331,7 @@ class MemoryAccessThread : public v8::base::Thread {
   }
 
   void Finish() {
-    v8::base::LockGuard<v8::base::Mutex> lock_guard(&mutex_);
+    v8::base::MutexGuard lock_guard(&mutex_);
     is_finished_ = true;
     has_request_cv_.NotifyOne();
   }
@@ -363,7 +358,7 @@ TEST(simulator_invalidate_exclusive_access_threaded) {
   TestData test_data(1);
 
   MemoryAccessThread thread;
-  thread.Start();
+  CHECK(thread.Start());
 
   MemoryAccess ldaxr_w(Kind::LoadExcl, Size::Word, offsetof(TestData, w));
   MemoryAccess stlxr_w(Kind::StoreExcl, Size::Word, offsetof(TestData, w), 7);

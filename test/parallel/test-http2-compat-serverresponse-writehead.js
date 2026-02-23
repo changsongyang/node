@@ -13,18 +13,22 @@ server.listen(0, common.mustCall(function() {
   const port = server.address().port;
   server.once('request', common.mustCall(function(request, response) {
     response.setHeader('foo-bar', 'def456');
-    response.writeHead(418, { 'foo-bar': 'abc123' }); // Override
 
-    common.expectsError(() => { response.writeHead(300); }, {
+    // Override
+    const returnVal = response.writeHead(418, { 'foo-bar': 'abc123' });
+
+    assert.strictEqual(returnVal, response);
+
+    assert.throws(() => { response.writeHead(300); }, {
       code: 'ERR_HTTP2_HEADERS_SENT'
     });
 
     response.on('finish', common.mustCall(function() {
       server.close();
       process.nextTick(common.mustCall(() => {
-        common.expectsError(() => { response.writeHead(300); }, {
-          code: 'ERR_HTTP2_INVALID_STREAM'
-        });
+        // The stream is invalid at this point,
+        // and this line verifies this does not throw.
+        response.writeHead(300);
       }));
     }));
     response.end();

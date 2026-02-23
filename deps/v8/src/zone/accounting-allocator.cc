@@ -4,202 +4,127 @@
 
 #include "src/zone/accounting-allocator.h"
 
-#include <cstdlib>
+#include <memory>
 
-#if V8_LIBC_BIONIC
-#include <malloc.h>  // NOLINT
-#endif
-
-#include "src/allocation.h"
+#include "src/base/bounded-page-allocator.h"
+#include "src/base/logging.h"
+#include "src/base/macros.h"
+#include "src/execution/isolate.h"
+#include "src/flags/flags.h"
+#include "src/heap/memory-pool.h"
+#include "src/utils/allocation.h"
+#include "src/zone/zone-segment.h"
 
 namespace v8 {
 namespace internal {
 
-AccountingAllocator::AccountingAllocator() : unused_segments_mutex_() {
-  static const size_t kDefaultBucketMaxSize = 5;
+namespace {
 
-  memory_pressure_level_.SetValue(MemoryPressureLevel::kNone);
-  std::fill(unused_segments_heads_, unused_segments_heads_ + kNumberBuckets,
-            nullptr);
-  std::fill(unused_segments_sizes_, unused_segments_sizes_ + kNumberBuckets, 0);
-  std::fill(unused_segments_max_sizes_,
-            unused_segments_max_sizes_ + kNumberBuckets, kDefaultBucketMaxSize);
-}
-
-AccountingAllocator::~AccountingAllocator() { ClearPool(); }
-
-void AccountingAllocator::MemoryPressureNotification(
-    MemoryPressureLevel level) {
-  memory_pressure_level_.SetValue(level);
-
-  if (level != MemoryPressureLevel::kNone) {
-    ClearPool();
-  }
-}
-
-void AccountingAllocator::ConfigureSegmentPool(const size_t max_pool_size) {
-  // The sum of the bytes of one segment of each size.
-  static const size_t full_size = (size_t(1) << (kMaxSegmentSizePower + 1)) -
-                                  (size_t(1) << kMinSegmentSizePower);
-  size_t fits_fully = max_pool_size / full_size;
-
-  base::LockGuard<base::Mutex> lock_guard(&unused_segments_mutex_);
-
-  // We assume few zones (less than 'fits_fully' many) to be active at the same
-  // time. When zones grow regularly, they will keep requesting segments of
-  // increasing size each time. Therefore we try to get as many segments with an
-  // equal number of segments of each size as possible.
-  // The remaining space is used to make more room for an 'incomplete set' of
-  // segments beginning with the smaller ones.
-  // This code will work best if the max_pool_size is a multiple of the
-  // full_size. If max_pool_size is no sum of segment sizes the actual pool
-  // size might be smaller then max_pool_size. Note that no actual memory gets
-  // wasted though.
-  // TODO(heimbuef): Determine better strategy generating a segment sizes
-  // distribution that is closer to real/benchmark usecases and uses the given
-  // max_pool_size more efficiently.
-  size_t total_size = fits_fully * full_size;
-
-  for (size_t power = 0; power < kNumberBuckets; ++power) {
-    if (total_size + (size_t(1) << (power + kMinSegmentSizePower)) <=
-        max_pool_size) {
-      unused_segments_max_sizes_[power] = fits_fully + 1;
-      total_size += size_t(1) << power;
-    } else {
-      unused_segments_max_sizes_[power] = fits_fully;
+class ManagedZones final {
+ public:
+  static std::optional<VirtualMemory> GetOrCreateMemoryForSegment(
+      Isolate* isolate, size_t bytes) {
+    DCHECK_EQ(0, bytes % kMinZonePageSize);
+    // Only consult the pool if we have an isolate and the size is exactly the
+    // zone page size. Larger sizes may be required and just bypass the pool.
+    if (isolate && bytes == kMinZonePageSize) {
+      auto maybe_reservation =
+          IsolateGroup::current()->memory_pool()->RemoveZoneReservation(
+              isolate);
+      if (maybe_reservation) {
+        return maybe_reservation;
+      }
     }
-  }
-}
 
-Segment* AccountingAllocator::GetSegment(size_t bytes) {
-  Segment* result = GetSegmentFromPool(bytes);
-  if (result == nullptr) {
-    result = AllocateSegment(bytes);
-    if (result != nullptr) {
-      result->Initialize(bytes);
+    v8::PageAllocator* platform_page_allocator = GetPlatformPageAllocator();
+    VirtualMemory memory(platform_page_allocator, bytes,
+                         v8::PageAllocator::AllocationHint(),
+                         kMinZonePageAlignment, v8::PageAllocator::kReadWrite);
+    if (V8_UNLIKELY(!memory.IsReserved())) {
+      return std::nullopt;
     }
+    CHECK(IsAligned(memory.address(), kMinZonePageAlignment));
+    return memory;
   }
 
-  return result;
-}
-
-Segment* AccountingAllocator::AllocateSegment(size_t bytes) {
-  void* memory = AllocWithRetry(bytes);
-  if (memory != nullptr) {
-    base::AtomicWord current =
-        base::Relaxed_AtomicIncrement(&current_memory_usage_, bytes);
-    base::AtomicWord max = base::Relaxed_Load(&max_memory_usage_);
-    while (current > max) {
-      max = base::Relaxed_CompareAndSwap(&max_memory_usage_, max, current);
+  static base::AllocationResult<void*> AllocateSegment(Isolate* isolate,
+                                                       size_t bytes) {
+    static constexpr size_t kMaxSize = size_t{2} * GB;
+    if (bytes >= kMaxSize) {
+      return {nullptr, bytes};
     }
+    void* memory = nullptr;
+    bytes = RoundUp(bytes, ManagedZones::kMinZonePageSize);
+    std::optional<VirtualMemory> maybe_reservation =
+        ManagedZones::GetOrCreateMemoryForSegment(isolate, bytes);
+    if (V8_LIKELY(maybe_reservation)) {
+      VirtualMemory reservation = std::move(maybe_reservation.value());
+      DCHECK(reservation.IsReserved());
+      DCHECK_EQ(reservation.size(), bytes);
+      memory = reinterpret_cast<void*>(reservation.address());
+      // Don't let the reservation be freed by destructor. From now on the
+      // reservation will be managed via a pair {memory, bytes}.
+      reservation.Reset();
+    }
+    return {memory, bytes};
   }
-  return reinterpret_cast<Segment*>(memory);
+
+  static void ReturnSegment(Isolate* isolate, void* memory, size_t bytes) {
+    VirtualMemory reservation(GetPlatformPageAllocator(),
+                              reinterpret_cast<Address>(memory), bytes);
+    if (reservation.size() == ManagedZones::kMinZonePageSize) {
+      IsolateGroup::current()->memory_pool()->AddZoneReservation(
+          isolate, std::move(reservation));
+    }
+    // Reservation will be automatically freed here otherwise.
+  }
+
+ private:
+  static constexpr size_t kMinZonePageSize = 512 * KB;
+  static constexpr size_t kMinZonePageAlignment = 16 * KB;
+};
+
+}  // namespace
+
+AccountingAllocator::AccountingAllocator() : AccountingAllocator(nullptr) {}
+
+AccountingAllocator::AccountingAllocator(Isolate* isolate)
+    : isolate_(isolate) {}
+
+AccountingAllocator::~AccountingAllocator() = default;
+
+Segment* AccountingAllocator::AllocateSegment(size_t requested_bytes) {
+  base::AllocationResult<void*> memory;
+  if (v8_flags.managed_zone_memory && isolate_) {
+    memory = ManagedZones::AllocateSegment(isolate_, requested_bytes);
+  } else {
+    memory = AllocAtLeastWithRetry(requested_bytes);
+  }
+  if (V8_UNLIKELY(memory.ptr == nullptr)) {
+    return nullptr;
+  }
+
+  size_t current =
+      current_memory_usage_.fetch_add(memory.count, std::memory_order_relaxed) +
+      memory.count;
+  size_t max = max_memory_usage_.load(std::memory_order_relaxed);
+  while (current > max && !max_memory_usage_.compare_exchange_weak(
+                              max, current, std::memory_order_relaxed)) {
+    // {max} was updated by {compare_exchange_weak}; retry.
+  }
+  DCHECK_LE(sizeof(Segment), memory.count);
+  return new (memory.ptr) Segment(memory.count);
 }
 
 void AccountingAllocator::ReturnSegment(Segment* segment) {
   segment->ZapContents();
-
-  if (memory_pressure_level_.Value() != MemoryPressureLevel::kNone) {
-    FreeSegment(segment);
-  } else if (!AddSegmentToPool(segment)) {
-    FreeSegment(segment);
-  }
-}
-
-void AccountingAllocator::FreeSegment(Segment* memory) {
-  base::Relaxed_AtomicIncrement(&current_memory_usage_,
-                                -static_cast<base::AtomicWord>(memory->size()));
-  memory->ZapHeader();
-  free(memory);
-}
-
-size_t AccountingAllocator::GetCurrentMemoryUsage() const {
-  return base::Relaxed_Load(&current_memory_usage_);
-}
-
-size_t AccountingAllocator::GetMaxMemoryUsage() const {
-  return base::Relaxed_Load(&max_memory_usage_);
-}
-
-size_t AccountingAllocator::GetCurrentPoolSize() const {
-  return base::Relaxed_Load(&current_pool_size_);
-}
-
-Segment* AccountingAllocator::GetSegmentFromPool(size_t requested_size) {
-  if (requested_size > (1 << kMaxSegmentSizePower)) {
-    return nullptr;
-  }
-
-  size_t power = kMinSegmentSizePower;
-  while (requested_size > (static_cast<size_t>(1) << power)) power++;
-
-  DCHECK_GE(power, kMinSegmentSizePower + 0);
-  power -= kMinSegmentSizePower;
-
-  Segment* segment;
-  {
-    base::LockGuard<base::Mutex> lock_guard(&unused_segments_mutex_);
-
-    segment = unused_segments_heads_[power];
-
-    if (segment != nullptr) {
-      unused_segments_heads_[power] = segment->next();
-      segment->set_next(nullptr);
-
-      unused_segments_sizes_[power]--;
-      base::Relaxed_AtomicIncrement(
-          &current_pool_size_, -static_cast<base::AtomicWord>(segment->size()));
-    }
-  }
-
-  if (segment) {
-    DCHECK_GE(segment->size(), requested_size);
-  }
-  return segment;
-}
-
-bool AccountingAllocator::AddSegmentToPool(Segment* segment) {
-  size_t size = segment->size();
-
-  if (size >= (1 << (kMaxSegmentSizePower + 1))) return false;
-
-  if (size < (1 << kMinSegmentSizePower)) return false;
-
-  size_t power = kMaxSegmentSizePower;
-
-  while (size < (static_cast<size_t>(1) << power)) power--;
-
-  DCHECK_GE(power, kMinSegmentSizePower + 0);
-  power -= kMinSegmentSizePower;
-
-  {
-    base::LockGuard<base::Mutex> lock_guard(&unused_segments_mutex_);
-
-    if (unused_segments_sizes_[power] >= unused_segments_max_sizes_[power]) {
-      return false;
-    }
-
-    segment->set_next(unused_segments_heads_[power]);
-    unused_segments_heads_[power] = segment;
-    base::Relaxed_AtomicIncrement(&current_pool_size_, size);
-    unused_segments_sizes_[power]++;
-  }
-
-  return true;
-}
-
-void AccountingAllocator::ClearPool() {
-  base::LockGuard<base::Mutex> lock_guard(&unused_segments_mutex_);
-
-  for (size_t power = 0; power <= kMaxSegmentSizePower - kMinSegmentSizePower;
-       power++) {
-    Segment* current = unused_segments_heads_[power];
-    while (current) {
-      Segment* next = current->next();
-      FreeSegment(current);
-      current = next;
-    }
-    unused_segments_heads_[power] = nullptr;
+  size_t segment_size = segment->total_size();
+  current_memory_usage_.fetch_sub(segment_size, std::memory_order_relaxed);
+  segment->ZapHeader();
+  if (isolate_ && v8_flags.managed_zone_memory) {
+    ManagedZones::ReturnSegment(isolate_, segment, segment_size);
+  } else {
+    free(segment);
   }
 }
 

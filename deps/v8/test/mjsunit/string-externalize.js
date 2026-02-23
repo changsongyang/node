@@ -44,37 +44,10 @@ function test() {
   }
   assertTrue(isOneByteString(str));
 
-  var twoByteExternalWithOneByteData =
-      "AA" + dont_inline();
-  externalizeString(twoByteExternalWithOneByteData, true /* force two-byte */);
-  assertFalse(isOneByteString(twoByteExternalWithOneByteData));
-
   var realTwoByteExternalString =
-      "\u1234\u1234\u1234\u1234" + dont_inline2();
+      createExternalizableString('\u1234\u1234\u1234\u1234' + dont_inline2());
   externalizeString(realTwoByteExternalString);
   assertFalse(isOneByteString(realTwoByteExternalString));
-
-  assertTrue(isOneByteString(["a", twoByteExternalWithOneByteData].join("")));
-
-  // Appending a two-byte string that contains only ascii chars should
-  // still produce an ascii cons.
-  var str1 = str + twoByteExternalWithOneByteData;
-  assertTrue(isOneByteString(str1));
-
-  // Force flattening of the string.
-  var old_length = str1.length - twoByteExternalWithOneByteData.length;
-  for (var i = 0; i < old_length; i++) {
-    assertEquals(String.fromCharCode(i & 0x7f), str1[i]);
-  }
-  for (var i = old_length; i < str1.length; i++) {
-    assertEquals("A", str1[i]);
-  }
-
-  // Flattened string should still be ascii.
-  assertTrue(isOneByteString(str1));
-
-  // Lower-casing an ascii string should produce ascii.
-  assertTrue(isOneByteString(str1.toLowerCase()));
 
   assertFalse(isOneByteString(["a", realTwoByteExternalString].join("")));
 

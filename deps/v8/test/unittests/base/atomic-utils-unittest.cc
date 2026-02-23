@@ -12,11 +12,7 @@ namespace v8 {
 namespace base {
 namespace {
 
-enum TestFlag : base::AtomicWord {
-  kA,
-  kB,
-  kC,
-};
+enum TestFlag : base::AtomicWord { kA, kB, kC };
 
 }  // namespace
 
@@ -25,15 +21,6 @@ TEST(AtomicValue, Initial) {
   AtomicValue<TestFlag> a(kA);
   EXPECT_EQ(TestFlag::kA, a.Value());
 }
-
-
-TEST(AtomicValue, TrySetValue) {
-  AtomicValue<TestFlag> a(kA);
-  EXPECT_FALSE(a.TrySetValue(kB, kC));
-  EXPECT_TRUE(a.TrySetValue(kA, kC));
-  EXPECT_EQ(TestFlag::kC, a.Value());
-}
-
 
 TEST(AtomicValue, SetValue) {
   AtomicValue<TestFlag> a(kB);
@@ -48,9 +35,6 @@ TEST(AtomicValue, WithVoidStar) {
   EXPECT_EQ(nullptr, a.Value());
   a.SetValue(&a);
   EXPECT_EQ(&a, a.Value());
-  EXPECT_FALSE(a.TrySetValue(nullptr, &dummy));
-  EXPECT_TRUE(a.TrySetValue(&a, &dummy));
-  EXPECT_EQ(&dummy, a.Value());
 }
 
 TEST(AsAtomic8, CompareAndSwap_Sequential) {
@@ -121,7 +105,7 @@ TEST(AsAtomic8, CompareAndSwap_Concurrent) {
     }
   }
   for (int i = 0; i < kThreadCount; i++) {
-    threads[i].Start();
+    CHECK(threads[i].Start());
   }
 
   for (int i = 0; i < kThreadCount; i++) {
@@ -134,7 +118,7 @@ TEST(AsAtomic8, CompareAndSwap_Concurrent) {
   }
 }
 
-TEST(AsAtomicWord, SetBits_Sequential) {
+TEST(AsAtomicWord, Relaxed_SetBits_Sequential) {
   uintptr_t word = 0;
   // Fill the word with a repeated 0xF0 pattern.
   for (unsigned i = 0; i < sizeof(word); i++) {
@@ -148,7 +132,50 @@ TEST(AsAtomicWord, SetBits_Sequential) {
   uintptr_t mask = 0xFF;
   for (unsigned i = 0; i < sizeof(word); i++) {
     uintptr_t byte = static_cast<uintptr_t>(i) << (i * 8);
-    AsAtomicWord::SetBits(&word, byte, mask);
+    AsAtomicWord::Relaxed_SetBits(&word, byte, mask);
+    mask <<= 8;
+  }
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    EXPECT_EQ(i, (word >> (i * 8) & 0xFFu));
+  }
+}
+
+TEST(AsAtomicWord, Relaxed_SetBitsByMask_Sequential) {
+  uintptr_t word = 0;
+  // Fill the word with a repeated 0xF0 pattern.
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    word = (word << 8) | 0xF0;
+  }
+  // Check the pattern.
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    EXPECT_EQ(0xF0u, (word >> (i * 8) & 0xFFu));
+  }
+  // Set the i-th byte value to 0XF1.
+  uintptr_t mask = 0x01;
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    AsAtomicWord::Relaxed_SetBits(&word, mask);
+    mask <<= 8;
+  }
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    EXPECT_EQ(0xF1u, (word >> (i * 8) & 0xFFu));
+  }
+}
+
+TEST(AsAtomicWord, Release_SetBits_Sequential) {
+  uintptr_t word = 0;
+  // Fill the word with a repeated 0xF0 pattern.
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    word = (word << 8) | 0xF0;
+  }
+  // Check the pattern.
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    EXPECT_EQ(0xF0u, (word >> (i * 8) & 0xFFu));
+  }
+  // Set the i-th byte value to i.
+  uintptr_t mask = 0xFF;
+  for (unsigned i = 0; i < sizeof(word); i++) {
+    uintptr_t byte = static_cast<uintptr_t>(i) << (i * 8);
+    AsAtomicWord::Release_SetBits(&word, byte, mask);
     mask <<= 8;
   }
   for (unsigned i = 0; i < sizeof(word); i++) {
@@ -173,7 +200,7 @@ class BitSettingThread final : public Thread {
   void Run() override {
     uintptr_t bit = 1;
     bit = bit << bit_index_;
-    AsAtomicWord::SetBits(word_addr_, bit, bit);
+    AsAtomicWord::Relaxed_SetBits(word_addr_, bit, bit);
   }
 
  private:
@@ -195,7 +222,7 @@ TEST(AsAtomicWord, SetBits_Concurrent) {
     threads[i].Initialize(&word, i * 2);
   }
   for (int i = 0; i < kThreadCount; i++) {
-    threads[i].Start();
+    CHECK(threads[i].Start());
   }
   for (int i = 0; i < kThreadCount; i++) {
     threads[i].Join();

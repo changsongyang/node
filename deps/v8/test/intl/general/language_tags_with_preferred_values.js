@@ -9,8 +9,6 @@
 
   // Matching should be case-insensitive.
   ["sgn-De", "gsg"],
-  ["sgn-BE-FR", "sfb"],
-  ["Sgn-bE-Fr", "sfb"],
 
   // deprecated region tag
   ["und-Latn-dd", "und-Latn-DE"],
@@ -29,6 +27,6 @@
   ["aam-u-ca-gregory", "aas-u-ca-gregory"],
 ].forEach(([inputLocale, expectedLocale]) => {
   const canonicalLocales = Intl.getCanonicalLocales(inputLocale);
-  assertEquals(canonicalLocales.length, 1);
-  assertEquals(canonicalLocales[0], expectedLocale);
+  assertEquals(1, canonicalLocales.length);
+  assertEquals(expectedLocale, canonicalLocales[0]);
 })

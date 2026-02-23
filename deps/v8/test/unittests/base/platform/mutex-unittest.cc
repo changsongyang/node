@@ -4,6 +4,14 @@
 
 #include "src/base/platform/mutex.h"
 
+#include <chrono>  // NOLINT(build/c++11)
+#include <queue>
+#include <thread>  // NOLINT(build/c++11)
+
+#include "src/base/platform/condition-variable.h"
+#include "src/base/platform/platform.h"
+#include "src/base/utils/random-number-generator.h"
+#include "test/unittests/fuzztest.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace v8 {
@@ -11,8 +19,8 @@ namespace base {
 
 TEST(Mutex, LockGuardMutex) {
   Mutex mutex;
-  { LockGuard<Mutex> lock_guard(&mutex); }
-  { LockGuard<Mutex> lock_guard(&mutex); }
+  { MutexGuard lock_guard(&mutex); }
+  { MutexGuard lock_guard(&mutex); }
 }
 
 
@@ -28,8 +36,8 @@ TEST(Mutex, LockGuardRecursiveMutex) {
 
 TEST(Mutex, LockGuardLazyMutex) {
   LazyMutex lazy_mutex = LAZY_MUTEX_INITIALIZER;
-  { LockGuard<Mutex> lock_guard(lazy_mutex.Pointer()); }
-  { LockGuard<Mutex> lock_guard(lazy_mutex.Pointer()); }
+  { MutexGuard lock_guard(lazy_mutex.Pointer()); }
+  { MutexGuard lock_guard(lazy_mutex.Pointer()); }
 }
 
 
@@ -86,6 +94,7 @@ TEST(Mutex, MultipleRecursiveMutexes) {
   recursive_mutex2.Unlock();
   recursive_mutex1.Unlock();
 }
+
 
 }  // namespace base
 }  // namespace v8

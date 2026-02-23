@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan --no-lazy-feedback-allocation
+
+var global;
 
 function TestSetWithCustomIterator(ctor) {
   const k1 = {};
@@ -19,7 +21,11 @@ function TestSetWithCustomIterator(ctor) {
   assertFalse(set.has(k1));
   assertTrue(set.has(k2));
   assertEquals(2, callCount);
+  // Keep entries alive to avoid collection of the weakly held map in optimized
+  // code which causes the code to deopt.
+  global = entries;
 }
+%PrepareFunctionForOptimization(TestSetWithCustomIterator);
 TestSetWithCustomIterator(Set);
 TestSetWithCustomIterator(Set);
 TestSetWithCustomIterator(Set);
@@ -28,6 +34,7 @@ TestSetWithCustomIterator(Set);
 assertOptimized(TestSetWithCustomIterator);
 
 TestSetWithCustomIterator(WeakSet);
+%PrepareFunctionForOptimization(TestSetWithCustomIterator);
 TestSetWithCustomIterator(WeakSet);
 TestSetWithCustomIterator(WeakSet);
 %OptimizeFunctionOnNextCall(TestSetWithCustomIterator);
@@ -49,7 +56,11 @@ function TestMapWithCustomIterator(ctor) {
   assertFalse(map.has(k1));
   assertEquals(2, map.get(k2));
   assertEquals(2, callCount);
+  // Keep entries alive to avoid collection of the weakly held map in optimized
+  // code which causes the code to deopt.
+  global = entries;
 }
+%PrepareFunctionForOptimization(TestMapWithCustomIterator);
 TestMapWithCustomIterator(Map);
 TestMapWithCustomIterator(Map);
 TestMapWithCustomIterator(Map);
@@ -58,6 +69,7 @@ TestMapWithCustomIterator(Map);
 assertOptimized(TestMapWithCustomIterator);
 
 TestMapWithCustomIterator(WeakMap);
+%PrepareFunctionForOptimization(TestMapWithCustomIterator);
 TestMapWithCustomIterator(WeakMap);
 TestMapWithCustomIterator(WeakMap);
 %OptimizeFunctionOnNextCall(TestMapWithCustomIterator);

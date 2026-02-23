@@ -25,20 +25,18 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <iostream>  // NOLINT(readability/streams)
+#include <iostream>
 
-#include "src/assembler-inl.h"
+#include "src/base/numbers/double.h"
 #include "src/base/utils/random-number-generator.h"
-#include "src/disassembler.h"
-#include "src/double.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/codegen/macro-assembler.h"
+#include "src/execution/simulator.h"
 #include "src/heap/factory.h"
-#include "src/macro-assembler.h"
-#include "src/ostreams.h"
-#include "src/simulator.h"
-#include "src/v8.h"
+#include "src/utils/ostreams.h"
 #include "test/cctest/assembler-helper-arm.h"
 #include "test/cctest/cctest.h"
-#include "test/cctest/compiler/value-helper.h"
+#include "test/common/value-helper.h"
 
 namespace v8 {
 namespace internal {
@@ -53,7 +51,7 @@ TEST(0) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   __ add(r0, r0, Operand(r1));
   __ mov(pc, Operand(lr));
@@ -61,12 +59,12 @@ TEST(0) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(3, 4, 0, 0, 0));
   ::printf("f() = %d\n", res);
   CHECK_EQ(7, res);
@@ -78,7 +76,7 @@ TEST(1) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label L, C;
 
   __ mov(r1, Operand(r0));
@@ -97,12 +95,12 @@ TEST(1) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(100, 0, 0, 0, 0));
   ::printf("f() = %d\n", res);
   CHECK_EQ(5050, res);
@@ -114,7 +112,7 @@ TEST(2) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label L, C;
 
   __ mov(r1, Operand(r0));
@@ -142,12 +140,12 @@ TEST(2) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(10, 0, 0, 0, 0));
   ::printf("f() = %d\n", res);
   CHECK_EQ(3628800, res);
@@ -159,18 +157,17 @@ TEST(3) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     int i;
     char c;
     int16_t s;
-  } T;
+  };
   T t;
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
-  Label L, C;
+  Assembler assm(AssemblerOptions{});
 
   __ mov(ip, Operand(sp));
-  __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, fp, lr});
   __ sub(fp, ip, Operand(4));
   __ mov(r4, Operand(r0));
   __ ldr(r0, MemOperand(r4, offsetof(T, i)));
@@ -184,17 +181,17 @@ TEST(3) {
   __ add(r0, r2, Operand(r0));
   __ mov(r2, Operand(r2, ASR, 3));
   __ strh(r2, MemOperand(r4, offsetof(T, s)));
-  __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, fp, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   t.i = 100000;
   t.c = 10;
   t.s = 1000;
@@ -213,7 +210,7 @@ TEST(4) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     double a;
     double b;
     double c;
@@ -230,19 +227,18 @@ TEST(4) {
     float p;
     float x;
     float y;
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles and floats.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
-  Label L, C;
+  Assembler assm(AssemblerOptions{});
 
   if (CpuFeatures::IsSupported(VFPv3)) {
     CpuFeatureScope scope(&assm, VFPv3);
 
     __ mov(ip, Operand(sp));
-    __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+    __ stm(db_w, sp, {r4, fp, lr});
     __ sub(fp, ip, Operand(4));
 
     __ mov(r4, Operand(r0));
@@ -268,16 +264,16 @@ TEST(4) {
     __ vstr(s1, r4, offsetof(T, y));
 
     // Move a literal into a register that can be encoded in the instruction.
-    __ vmov(d4, Double(1.0));
+    __ vmov(d4, base::Double(1.0));
     __ vstr(d4, r4, offsetof(T, e));
 
     // Move a literal into a register that requires 64 bits to encode.
     // 0x3FF0000010000000 = 1.000000059604644775390625
-    __ vmov(d4, Double(1.000000059604644775390625));
+    __ vmov(d4, base::Double(1.000000059604644775390625));
     __ vstr(d4, r4, offsetof(T, d));
 
     // Convert from floating point to integer.
-    __ vmov(d4, Double(2.0));
+    __ vmov(d4, base::Double(2.0));
     __ vcvt_s32_f64(s1, d4);
     __ vstr(s1, r4, offsetof(T, i));
 
@@ -315,17 +311,17 @@ TEST(4) {
     __ vmov(s0, Float32(-16.0f));
     __ vstr(s0, r4, offsetof(T, p));
 
-    __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+    __ ldm(ia_w, sp, {r4, fp, pc});
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     t.a = 1.5;
     t.b = 2.75;
     t.c = 17.17;
@@ -367,7 +363,7 @@ TEST(5) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   if (CpuFeatures::IsSupported(ARMv7)) {
     CpuFeatureScope scope(&assm, ARMv7);
@@ -382,12 +378,12 @@ TEST(5) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+    auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
     int res = reinterpret_cast<int>(f.Call(0xAAAAAAAA, 0, 0, 0, 0));
     ::printf("f() = %d\n", res);
     CHECK_EQ(-7, res);
@@ -401,7 +397,7 @@ TEST(6) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   __ usat(r1, 8, Operand(r0));           // Sat 0xFFFF to 0-255 = 0xFF.
   __ usat(r2, 12, Operand(r0, ASR, 9));  // Sat (0xFFFF>>9) to 0-4095 = 0x7F.
@@ -413,12 +409,12 @@ TEST(6) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(0xFFFF, 0, 0, 0, 0));
   ::printf("f() = %d\n", res);
   CHECK_EQ(382, res);
@@ -438,7 +434,7 @@ static void TestRoundingMode(VCVTTypes types,
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   Label wrong_exception;
 
@@ -449,7 +445,7 @@ static void TestRoundingMode(VCVTTypes types,
   __ vmsr(r2);
 
   // Load value, convert, and move back result to r0 if everything went well.
-  __ vmov(d1, Double(value));
+  __ vmov(d1, base::Double(value));
   switch (types) {
     case s32_f64:
       __ vcvt_s32_f64(s0, d1, kFPSCRRounding);
@@ -461,7 +457,6 @@ static void TestRoundingMode(VCVTTypes types,
 
     default:
       UNREACHABLE();
-      break;
   }
   // Check for vfp exceptions
   __ vmrs(r2);
@@ -481,12 +476,12 @@ static void TestRoundingMode(VCVTTypes types,
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(0, 0, 0, 0, 0));
   ::printf("res = %d\n", res);
   CHECK_EQ(expected, res);
@@ -610,7 +605,7 @@ TEST(8) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct D {
     double a;
     double b;
     double c;
@@ -619,10 +614,10 @@ TEST(8) {
     double f;
     double g;
     double h;
-  } D;
+  };
   D d;
 
-  typedef struct {
+  struct F {
     float a;
     float b;
     float c;
@@ -631,15 +626,15 @@ TEST(8) {
     float f;
     float g;
     float h;
-  } F;
+  };
   F f;
 
   // Create a function that uses vldm/vstm to move some double and
   // single precision values around in memory.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   __ mov(ip, Operand(sp));
-  __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, fp, lr});
   __ sub(fp, ip, Operand(4));
 
   __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(D, a))));
@@ -658,17 +653,17 @@ TEST(8) {
   __ vstm(ia_w, r4, s6, s7);
   __ vstm(ia_w, r4, s0, s5);
 
-  __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, fp, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto fn = GeneratedCode<F_ppiii>::FromCode(*code);
+  auto fn = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
   d.a = 1.1;
   d.b = 2.2;
   d.c = 3.3;
@@ -715,7 +710,7 @@ TEST(9) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct D {
     double a;
     double b;
     double c;
@@ -724,10 +719,10 @@ TEST(9) {
     double f;
     double g;
     double h;
-  } D;
+  };
   D d;
 
-  typedef struct {
+  struct F {
     float a;
     float b;
     float c;
@@ -736,15 +731,15 @@ TEST(9) {
     float f;
     float g;
     float h;
-  } F;
+  };
   F f;
 
   // Create a function that uses vldm/vstm to move some double and
   // single precision values around in memory.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   __ mov(ip, Operand(sp));
-  __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, fp, lr});
   __ sub(fp, ip, Operand(4));
 
   __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(D, a))));
@@ -767,17 +762,17 @@ TEST(9) {
   __ add(r4, r4, Operand(2 * 4));
   __ vstm(ia, r4, s0, s5);
 
-  __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, fp, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto fn = GeneratedCode<F_ppiii>::FromCode(*code);
+  auto fn = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
   d.a = 1.1;
   d.b = 2.2;
   d.c = 3.3;
@@ -824,7 +819,7 @@ TEST(10) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct D {
     double a;
     double b;
     double c;
@@ -833,10 +828,10 @@ TEST(10) {
     double f;
     double g;
     double h;
-  } D;
+  };
   D d;
 
-  typedef struct {
+  struct F {
     float a;
     float b;
     float c;
@@ -845,15 +840,15 @@ TEST(10) {
     float f;
     float g;
     float h;
-  } F;
+  };
   F f;
 
   // Create a function that uses vldm/vstm to move some double and
   // single precision values around in memory.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   __ mov(ip, Operand(sp));
-  __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, fp, lr});
   __ sub(fp, ip, Operand(4));
 
   __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(D, h)) + 8));
@@ -872,17 +867,17 @@ TEST(10) {
   __ vstm(db_w, r4, s0, s5);
   __ vstm(db_w, r4, s6, s7);
 
-  __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, fp, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto fn = GeneratedCode<F_ppiii>::FromCode(*code);
+  auto fn = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
   d.a = 1.1;
   d.b = 2.2;
   d.c = 3.3;
@@ -929,18 +924,18 @@ TEST(11) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct I {
     int32_t a;
     int32_t b;
     int32_t c;
     int32_t d;
-  } I;
+  };
   I i;
 
   i.a = 0xABCD0001;
   i.b = 0xABCD0000;
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   // Test HeapObject untagging.
   __ ldr(r1, MemOperand(r0, offsetof(I, a)));
@@ -971,12 +966,12 @@ TEST(11) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   f.Call(&i, 0, 0, 0, 0);
 
   CHECK_EQ(static_cast<int32_t>(0xABCD0001), i.a);
@@ -992,7 +987,7 @@ TEST(12) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label target;
   __ b(eq, &target);
   __ b(ne, &target);
@@ -1011,7 +1006,7 @@ TEST(13) {
     return;
   }
 
-  typedef struct {
+  struct T {
     double a;
     double b;
     double c;
@@ -1023,18 +1018,17 @@ TEST(13) {
     double k;
     uint32_t low;
     uint32_t high;
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles and floats.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
-  Label L, C;
+  Assembler assm(AssemblerOptions{});
 
   if (CpuFeatures::IsSupported(VFPv3)) {
     CpuFeatureScope scope(&assm, VFPv3);
 
-    __ stm(db_w, sp, r4.bit() | lr.bit());
+    __ stm(db_w, sp, {r4, lr});
 
     // Load a, b, c into d16, d17, d18.
     __ mov(r4, Operand(r0));
@@ -1078,8 +1072,8 @@ TEST(13) {
     __ vstm(ia_w, r4, d29, d31);
 
     // Move constants into d20, d21, d22 and store into i, j, k.
-    __ vmov(d20, Double(14.7610017472335499));
-    __ vmov(d21, Double(16.0));
+    __ vmov(d20, base::Double(14.7610017472335499));
+    __ vmov(d21, base::Double(16.0));
     __ mov(r1, Operand(372106121));
     __ mov(r2, Operand(1079146608));
     __ vmov(NeonS32, d22, 0, r1);
@@ -1092,17 +1086,17 @@ TEST(13) {
     __ vmov(NeonS32, r4, d22, 1);
     __ str(r4, MemOperand(r0, offsetof(T, high)));
 
-    __ ldm(ia_w, sp, r4.bit() | pc.bit());
+    __ ldm(ia_w, sp, {r4, pc});
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     t.a = 1.5;
     t.b = 2.75;
     t.c = 17.17;
@@ -1131,20 +1125,20 @@ TEST(14) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     double left;
     double right;
     double add_result;
     double sub_result;
     double mul_result;
     double div_result;
-  } T;
+  };
   T t;
 
   // Create a function that makes the four basic operations.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
-  // Ensure FPSCR state (as JSEntryStub does).
+  // Ensure FPSCR state (as JSEntry does).
   Label fpscr_done;
   __ vmrs(r1);
   __ tst(r1, Operand(kVFPDefaultNaNModeControlBit));
@@ -1169,13 +1163,13 @@ TEST(14) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
-  t.left = bit_cast<double>(kHoleNanInt64);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
+  t.left = base::bit_cast<double>(kHoleNanInt64);
   t.right = 1;
   t.add_result = 0;
   t.sub_result = 0;
@@ -1192,17 +1186,17 @@ TEST(14) {
   // With VFP2 the sign of the canonicalized Nan is undefined. So
   // we remove the sign bit for the upper tests.
   CHECK_EQ(kArmNanUpper32,
-           (bit_cast<int64_t>(t.add_result) >> 32) & 0x7FFFFFFF);
-  CHECK_EQ(kArmNanLower32, bit_cast<int64_t>(t.add_result) & 0xFFFFFFFFu);
+           (base::bit_cast<int64_t>(t.add_result) >> 32) & 0x7FFFFFFF);
+  CHECK_EQ(kArmNanLower32, base::bit_cast<int64_t>(t.add_result) & 0xFFFFFFFFu);
   CHECK_EQ(kArmNanUpper32,
-           (bit_cast<int64_t>(t.sub_result) >> 32) & 0x7FFFFFFF);
-  CHECK_EQ(kArmNanLower32, bit_cast<int64_t>(t.sub_result) & 0xFFFFFFFFu);
+           (base::bit_cast<int64_t>(t.sub_result) >> 32) & 0x7FFFFFFF);
+  CHECK_EQ(kArmNanLower32, base::bit_cast<int64_t>(t.sub_result) & 0xFFFFFFFFu);
   CHECK_EQ(kArmNanUpper32,
-           (bit_cast<int64_t>(t.mul_result) >> 32) & 0x7FFFFFFF);
-  CHECK_EQ(kArmNanLower32, bit_cast<int64_t>(t.mul_result) & 0xFFFFFFFFu);
+           (base::bit_cast<int64_t>(t.mul_result) >> 32) & 0x7FFFFFFF);
+  CHECK_EQ(kArmNanLower32, base::bit_cast<int64_t>(t.mul_result) & 0xFFFFFFFFu);
   CHECK_EQ(kArmNanUpper32,
-           (bit_cast<int64_t>(t.div_result) >> 32) & 0x7FFFFFFF);
-  CHECK_EQ(kArmNanLower32, bit_cast<int64_t>(t.div_result) & 0xFFFFFFFFu);
+           (base::bit_cast<int64_t>(t.div_result) >> 32) & 0x7FFFFFFF);
+  CHECK_EQ(kArmNanLower32, base::bit_cast<int64_t>(t.div_result) & 0xFFFFFFFFu);
 }
 
 #define CHECK_EQ_SPLAT(field, ex) \
@@ -1232,9 +1226,9 @@ TEST(14) {
   CHECK_ESTIMATE(ex, tol, t.field[3]);
 
 #define INT32_TO_FLOAT(val) \
-  std::round(static_cast<float>(bit_cast<int32_t>(val)))
+  std::round(static_cast<float>(base::bit_cast<int32_t>(val)))
 #define UINT32_TO_FLOAT(val) \
-  std::round(static_cast<float>(bit_cast<uint32_t>(val)))
+  std::round(static_cast<float>(base::bit_cast<uint32_t>(val)))
 
 TEST(15) {
   // Test the Neon instructions.
@@ -1242,7 +1236,7 @@ TEST(15) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     uint32_t src0;
     uint32_t src1;
     uint32_t src2;
@@ -1278,6 +1272,7 @@ TEST(15) {
     float vcvt_f32_s32[4], vcvt_f32_u32[4];
     uint32_t vdup8[4], vdup16[4], vdup32[4];
     float vabsf[4], vnegf[4];
+    uint32_t vclt0_s8[4], vclt0_s16[4], vclt0_s32[4];
     uint32_t vabs_s8[4], vabs_s16[4], vabs_s32[4];
     uint32_t vneg_s8[4], vneg_s16[4], vneg_s32[4];
     uint32_t veor[4], vand[4], vorr[4];
@@ -1286,6 +1281,10 @@ TEST(15) {
     uint32_t vmin_s8[4], vmin_u16[4], vmin_s32[4];
     uint32_t vmax_s8[4], vmax_u16[4], vmax_s32[4];
     uint32_t vpadd_i8[2], vpadd_i16[2], vpadd_i32[2];
+    uint32_t vpadal_s8[4], vpadal_s16[4], vpadal_s32[4];
+    uint32_t vpadal_u8[4], vpadal_u16[4], vpadal_u32[4];
+    uint32_t vpaddl_s8[4], vpaddl_s16[4], vpaddl_s32[4];
+    uint32_t vpaddl_u8[4], vpaddl_u16[4], vpaddl_u32[4];
     uint32_t vpmin_s8[2], vpmin_u16[2], vpmin_s32[2];
     uint32_t vpmax_s8[2], vpmax_u16[2], vpmax_s32[2];
     uint32_t vadd8[4], vadd16[4], vadd32[4];
@@ -1293,9 +1292,11 @@ TEST(15) {
     uint32_t vsub8[4], vsub16[4], vsub32[4];
     uint32_t vqsub_u8[4], vqsub_s16[4], vqsub_u32[4];
     uint32_t vmul8[4], vmul16[4], vmul32[4];
-    uint32_t vshl8[4], vshl16[4], vshl32[5];
-    uint32_t vshr_s8[4], vshr_u16[4], vshr_s32[5];
+    uint32_t vshl8[4], vshl16[4], vshl32[4];
+    uint32_t vshr_s8[4], vshr_u16[4], vshr_s32[4];
+    uint32_t vshr_s8_d[2], vshr_u16_d[2], vshr_s32_d[2];
     uint32_t vsli_64[2], vsri_64[2], vsli_32[2], vsri_32[2];
+    uint32_t vsra_64[2], vsra_32[2], vsra_16[2];
     uint32_t vceq[4], vceqf[4], vcgef[4], vcgtf[4];
     uint32_t vcge_s8[4], vcge_u16[4], vcge_s32[4];
     uint32_t vcgt_s8[4], vcgt_u16[4], vcgt_s32[4];
@@ -1316,17 +1317,17 @@ TEST(15) {
     uint32_t vtrnd8a[2], vtrnd8b[2], vtrnd16a[2], vtrnd16b[2], vtrnd32a[2],
         vtrnd32b[2];
     uint32_t vtbl[2], vtbx[2];
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles, floats, and SIMD values.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   if (CpuFeatures::IsSupported(NEON)) {
     CpuFeatureScope scope(&assm, NEON);
 
-    __ stm(db_w, sp, r4.bit() | r5.bit() | lr.bit());
+    __ stm(db_w, sp, {r4, r5, lr});
     // Move 32 bytes with neon.
     __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, src0))));
     __ vld1(Neon8, NeonListOperand(d0, 4), NeonMemOperand(r4));
@@ -1353,22 +1354,22 @@ TEST(15) {
     __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vmovl_s32))));
     __ vst1(Neon8, NeonListOperand(q3), NeonMemOperand(r4));
     // Narrow what we widened.
-    __ vqmovn(NeonU16, d0, q2);
+    __ vqmovn(NeonU16, NeonU16, d0, q2);
     __ vstr(d0, r0, offsetof(T, vqmovn_u16));
     __ vmov(d1, d0);
-    __ vqmovn(NeonS8, d2, q0);
+    __ vqmovn(NeonS8, NeonS8, d2, q0);
     __ vstr(d2, r0, offsetof(T, vqmovn_s8));
-    __ vqmovn(NeonS32, d4, q3);
+    __ vqmovn(NeonS32, NeonS32, d4, q3);
     __ vstr(d4, r0, offsetof(T, vqmovn_s32));
 
     // ARM core register to scalar.
     __ mov(r4, Operand(0xFFFFFFF8));
-    __ vmov(d0, Double(0.0));
+    __ vmov(d0, base::Double(0.0));
     __ vmov(NeonS8, d0, 1, r4);
     __ vmov(NeonS16, d0, 1, r4);
     __ vmov(NeonS32, d0, 1, r4);
     __ vstr(d0, r0, offsetof(T, vmov_to_scalar1));
-    __ vmov(d0, Double(0.0));
+    __ vmov(d0, base::Double(0.0));
     __ vmov(NeonS8, d0, 3, r4);
     __ vmov(NeonS16, d0, 3, r4);
     __ vstr(d0, r0, offsetof(T, vmov_to_scalar2));
@@ -1647,6 +1648,76 @@ TEST(15) {
     __ vpadd(Neon32, d0, d0, d2);
     __ vstr(d0, r0, offsetof(T, vpadd_i32));
 
+    // vpadal signed.
+    __ mov(r4, Operand(0x81));
+    __ vdup(Neon8, q0, r4);
+
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonS8, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_s8))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonS16, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_s16))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonS32, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_s32))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    // vpadal unsigned.
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonU8, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_u8))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonU16, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_u16))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ mov(r4, Operand(0x01));
+    __ vdup(Neon8, q2, r4);
+    __ vpadal(NeonU32, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpadal_u32))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    // vpaddl signed.
+    __ mov(r4, Operand(0x81));
+    __ vdup(Neon8, q0, r4);
+
+    __ vpaddl(NeonS8, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_s8))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ vpaddl(NeonS16, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_s16))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ vpaddl(NeonS32, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_s32))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    // vpaddl unsigned.
+    __ vpaddl(NeonU8, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_u8))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ vpaddl(NeonU16, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_u16))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    __ vpaddl(NeonU32, q2, q0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vpaddl_u32))));
+    __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
     // vpmin/vpmax integer.
     __ mov(r4, Operand(0x03));
     __ vdup(Neon16, q0, r4);
@@ -1805,6 +1876,19 @@ TEST(15) {
     __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vshr_s32))));
     __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
 
+    // vshr.s, vshr.u with d registers.
+    __ mov(r4, Operand(0x80));
+    __ vdup(Neon8, q0, r4);
+    __ vshr(NeonS8, d1, d0, 1);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vshr_s8_d))));
+    __ vst1(Neon8, NeonListOperand(d1), NeonMemOperand(r4));
+    __ vshr(NeonU16, d2, d0, 9);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vshr_u16_d))));
+    __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
+    __ vshr(NeonS32, d2, d0, 17);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vshr_s32_d))));
+    __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
+
     // vsli, vsri.
     __ mov(r4, Operand(0xFFFFFFFF));
     __ mov(r5, Operand(0x1));
@@ -1824,6 +1908,20 @@ TEST(15) {
     __ vmov(d1, r5, r5);
     __ vsri(Neon32, d1, d0, 16);
     __ vstr(d1, r0, offsetof(T, vsri_32));
+
+    // vsra.
+    __ vmov(d0, r4, r5);
+    // Check same dst and src registers.
+    __ vsra(NeonU64, d0, d0, 1);
+    __ vstr(d0, r0, offsetof(T, vsra_64));
+    __ vmov(d0, r4, r5);
+    __ vmov(d1, r5, r4);
+    __ vsra(NeonS32, d1, d0, 16);
+    __ vstr(d1, r0, offsetof(T, vsra_32));
+    __ vmov(d0, r4, r5);
+    __ vmov(d1, r5, r4);
+    __ vsra(NeonU16, d1, d0, 2);
+    __ vstr(d1, r0, offsetof(T, vsra_16));
 
     // vceq.
     __ mov(r4, Operand(0x03));
@@ -1861,6 +1959,26 @@ TEST(15) {
     __ vcgt(NeonS32, q2, q0, q1);
     __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vcgt_s32))));
     __ vst1(Neon8, NeonListOperand(q2), NeonMemOperand(r4));
+
+    // vclt #0 (signed integer).
+    __ mov(r4, Operand(0x7F80807F));
+    __ mov(r5, Operand(0xFF01FF01));
+    __ vmov(d0, r4, r5);
+    __ mov(r4, Operand(0xFF0000FF));
+    __ mov(r5, Operand(0x00800080));
+    __ vmov(d1, r4, r5);
+
+    __ vclt(Neon8, q1, q0, 0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vclt0_s8))));
+    __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
+
+    __ vclt(Neon16, q1, q0, 0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vclt0_s16))));
+    __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
+
+    __ vclt(Neon32, q1, q0, 0);
+    __ add(r4, r0, Operand(static_cast<int32_t>(offsetof(T, vclt0_s32))));
+    __ vst1(Neon8, NeonListOperand(q1), NeonMemOperand(r4));
 
     // vtst.
     __ mov(r4, Operand(0x03));
@@ -2044,17 +2162,17 @@ TEST(15) {
     __ vstr(d2, r0, offsetof(T, vtbx));
 
     // Restore and return.
-    __ ldm(ia_w, sp, r4.bit() | r5.bit() | pc.bit());
+    __ ldm(ia_w, sp, {r4, r5, pc});
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     t.src0 = 0x01020304;
     t.src1 = 0x11121314;
     t.src2 = 0x21222324;
@@ -2132,6 +2250,11 @@ TEST(15) {
                   UINT32_TO_FLOAT(kMaxInt), UINT32_TO_FLOAT(kMaxUInt32),
                   UINT32_TO_FLOAT(kMinInt + 1));
 
+    CHECK_EQ_32X4(vclt0_s8, 0x00FFFF00u, 0xFF00FF00u, 0xFF0000FFu, 0x00FF00FFu);
+    CHECK_EQ_32X4(vclt0_s16, 0x0000FFFF, 0xFFFFFFFFu, 0xFFFF0000u, 0x00000000u);
+    CHECK_EQ_32X4(vclt0_s32, 0x00000000u, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                  0x00000000u);
+
     CHECK_EQ_32X4(vabsf, 1.0, 0.0, 0.0, 1.0);
     CHECK_EQ_32X4(vnegf, 1.0, 0.0, -0.0, -1.0);
     // src: [0x7F7F7F7F, 0x01010101, 0xFFFFFFFF, 0x80808080]
@@ -2172,6 +2295,23 @@ TEST(15) {
     CHECK_EQ_32X2(vpadd_i8, 0x03030303u, 0x06060606u);
     CHECK_EQ_32X2(vpadd_i16, 0x0C0C0606u, 0x06060606u);
     CHECK_EQ_32X2(vpadd_i32, 0x12120C0Cu, 0x06060606u);
+
+    CHECK_EQ_32X4(vpadal_s8, 0x30003, 0x30003, 0x30003, 0x30003);
+    CHECK_EQ_32X4(vpadal_s16, 0x1000403, 0x1000403, 0x1000403, 0x1000403);
+    CHECK_EQ_32X4(vpadal_s32, 0x4040403, 0x1010100, 0x4040403, 0x1010100);
+
+    CHECK_EQ_32X4(vpadal_u8, 0x2030203, 0x2030203, 0x2030203, 0x2030203);
+    CHECK_EQ_32X4(vpadal_u16, 0x1020403, 0x1020403, 0x1020403, 0x1020403);
+    CHECK_EQ_32X4(vpadal_u32, 0x4040403, 0x1010102, 0x4040403, 0x1010102);
+
+    CHECK_EQ_32X4(vpaddl_s8, 0xFF02FF02, 0xFF02FF02, 0xFF02FF02, 0xFF02FF02);
+    CHECK_EQ_32X4(vpaddl_s16, 0xFFFF0302, 0xFFFF0302, 0xFFFF0302, 0xFFFF0302);
+    CHECK_EQ_32X4(vpaddl_s32, 0x03030302, 0xFFFFFFFF, 0x03030302, 0xFFFFFFFF);
+
+    CHECK_EQ_32X4(vpaddl_u8, 0x01020102, 0x01020102, 0x01020102, 0x01020102);
+    CHECK_EQ_32X4(vpaddl_u16, 0x00010302, 0x00010302, 0x00010302, 0x00010302);
+    CHECK_EQ_32X4(vpaddl_u32, 0x03030302, 0x00000001, 0x03030302, 0x00000001);
+
     CHECK_EQ_32X2(vpmin_s8, 0x00000000u, 0x03030303u);
     CHECK_EQ_32X2(vpmax_s8, 0x03030303u, 0x03030303u);
     // [0, ffff, 0, ffff] and [ffff, ffff]
@@ -2201,10 +2341,16 @@ TEST(15) {
     CHECK_EQ_SPLAT(vshr_s8, 0xC0C0C0C0u);
     CHECK_EQ_SPLAT(vshr_u16, 0x00400040u);
     CHECK_EQ_SPLAT(vshr_s32, 0xFFFFC040u);
+    CHECK_EQ_32X2(vshr_s8_d, 0xC0C0C0C0u, 0xC0C0C0C0u);
+    CHECK_EQ_32X2(vshr_u16_d, 0x00400040u, 0x00400040u);
+    CHECK_EQ_32X2(vshr_s32_d, 0xFFFFC040u, 0xFFFFC040u);
     CHECK_EQ_32X2(vsli_64, 0x01u, 0xFFFFFFFFu);
     CHECK_EQ_32X2(vsri_64, 0xFFFFFFFFu, 0x01u);
     CHECK_EQ_32X2(vsli_32, 0xFFFF0001u, 0x00010001u);
     CHECK_EQ_32X2(vsri_32, 0x00000000u, 0x0000FFFFu);
+    CHECK_EQ_32X2(vsra_64, 0xFFFFFFFEu, 0x2);
+    CHECK_EQ_32X2(vsra_32, 0x0, 0xFFFFFFFFu);
+    CHECK_EQ_32X2(vsra_16, 0x3FFF4000, 0xFFFFFFFFu);
     CHECK_EQ_SPLAT(vceq, 0x00FF00FFu);
     // [0, 3, 0, 3, ...] >= [3, 3, 3, 3, ...]
     CHECK_EQ_SPLAT(vcge_s8, 0x00FF00FFu);
@@ -2282,7 +2428,7 @@ TEST(16) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     uint32_t src0;
     uint32_t src1;
     uint32_t src2;
@@ -2291,14 +2437,14 @@ TEST(16) {
     uint32_t dst2;
     uint32_t dst3;
     uint32_t dst4;
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles and floats.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
-  __ stm(db_w, sp, r4.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, lr});
 
   __ mov(r4, Operand(r0));
   __ ldr(r0, MemOperand(r4, offsetof(T, src0)));
@@ -2320,17 +2466,17 @@ TEST(16) {
   __ uxtab(r2, r0, r1, 8);
   __ str(r2, MemOperand(r4, offsetof(T, dst4)));
 
-  __ ldm(ia_w, sp, r4.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   t.src0 = 0x01020304;
   t.src1 = 0x11121314;
   t.src2 = 0x11121300;
@@ -2356,7 +2502,7 @@ TEST(17) {
   HandleScope scope(isolate);
 
   // Generate a code segment that will be longer than 2^24 bytes.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   for (size_t i = 0; i < 1 << 23 ; ++i) {  // 2^23
     __ nop();
   }
@@ -2379,7 +2525,7 @@ TEST(sdiv) {
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   struct T {
     int32_t dividend;
@@ -2403,12 +2549,12 @@ TEST(sdiv) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     TEST_SDIV(0, kMinInt, 0);
     TEST_SDIV(0, 1024, 0);
     TEST_SDIV(1073741824, kMinInt, -2);
@@ -2439,7 +2585,7 @@ TEST(udiv) {
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   struct T {
     uint32_t dividend;
@@ -2463,12 +2609,12 @@ TEST(udiv) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     TEST_UDIV(0u, 0, 0);
     TEST_UDIV(0u, 1024, 0);
     TEST_UDIV(5u, 10, 2);
@@ -2485,18 +2631,18 @@ TEST(smmla) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ smmla(r1, r1, r2, r3);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt(), z = rng->NextInt();
     f.Call(&r, x, y, z, 0);
@@ -2510,18 +2656,18 @@ TEST(smmul) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ smmul(r1, r1, r2);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt();
     f.Call(&r, x, y, 0, 0);
@@ -2535,18 +2681,18 @@ TEST(sxtb) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ sxtb(r1, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt();
     f.Call(&r, x, 0, 0, 0);
@@ -2560,18 +2706,18 @@ TEST(sxtab) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ sxtab(r1, r2, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt();
     f.Call(&r, x, y, 0, 0);
@@ -2585,18 +2731,18 @@ TEST(sxth) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ sxth(r1, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt();
     f.Call(&r, x, 0, 0, 0);
@@ -2610,18 +2756,18 @@ TEST(sxtah) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ sxtah(r1, r2, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt();
     f.Call(&r, x, y, 0, 0);
@@ -2635,18 +2781,18 @@ TEST(uxtb) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ uxtb(r1, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt();
     f.Call(&r, x, 0, 0, 0);
@@ -2660,18 +2806,18 @@ TEST(uxtab) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ uxtab(r1, r2, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt();
     f.Call(&r, x, y, 0, 0);
@@ -2685,18 +2831,18 @@ TEST(uxth) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ uxth(r1, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt();
     f.Call(&r, x, 0, 0, 0);
@@ -2710,18 +2856,18 @@ TEST(uxtah) {
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
   RandomNumberGenerator* const rng = isolate->random_number_generator();
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ uxtah(r1, r2, r1);
   __ str(r1, MemOperand(r0));
   __ bx(lr);
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   for (size_t i = 0; i < 128; ++i) {
     int32_t r, x = rng->NextInt(), y = rng->NextInt();
     f.Call(&r, x, y, 0, 0);
@@ -2739,15 +2885,15 @@ TEST(rbit) {
   CcTest::InitializeVM();
   Isolate* const isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   if (CpuFeatures::IsSupported(ARMv7)) {
     CpuFeatureScope scope(&assm, ARMv7);
 
-    typedef struct {
+    struct T {
       uint32_t input;
       uint32_t result;
-    } T;
+    };
     T t;
 
     __ ldr(r1, MemOperand(r0, offsetof(T, input)));
@@ -2758,13 +2904,13 @@ TEST(rbit) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 
 #ifdef OBJECT_PRINT
-    code->Print(std::cout);
+    Print(*code, std::cout);
 #endif
 
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
     TEST_RBIT(0xFFFFFFFF, 0xFFFFFFFF);
     TEST_RBIT(0x00000000, 0x00000000);
     TEST_RBIT(0xFFFF0000, 0x0000FFFF);
@@ -2785,11 +2931,11 @@ TEST(code_relative_offset) {
   Handle<HeapObject> code_object(ReadOnlyRoots(isolate).self_reference_marker(),
                                  isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   Label start, target_away, target_faraway;
 
-  __ stm(db_w, sp, r4.bit() | r5.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, r5, lr});
 
   // r3 is used as the address zero, the test will crash when we load it.
   __ mov(r3, Operand::Zero());
@@ -2834,13 +2980,14 @@ TEST(code_relative_offset) {
   // r0 = r0 + 5 + 5 + 11
   __ add(r0, r0, Operand(11));
 
-  __ ldm(ia_w, sp, r4.bit() | r5.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, r5, pc});
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
-  Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, code_object);
-  auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+  Handle<Code> code = Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING)
+                          .set_self_reference(code_object)
+                          .Build();
+  auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
   int res = reinterpret_cast<int>(f.Call(21, 0, 0, 0, 0));
   ::printf("f() = %d\n", res);
   CHECK_EQ(42, res);
@@ -2852,7 +2999,7 @@ TEST(msr_mrs) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   // Create a helper function:
   //  void TestMsrMrs(uint32_t nzcv,
@@ -2878,12 +3025,12 @@ TEST(msr_mrs) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_ippii>::FromCode(*code);
+  auto f = GeneratedCode<F_ippii>::FromCode(isolate, *code);
 
 #define CHECK_MSR_MRS(n, z, c, v)                                  \
   do {                                                             \
@@ -2922,27 +3069,26 @@ TEST(ARMv8_float32_vrintX) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     float input;
     float ar;
     float nr;
     float mr;
     float pr;
     float zr;
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the floats.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
-  Label L, C;
+  Assembler assm(AssemblerOptions{});
 
 
   if (CpuFeatures::IsSupported(ARMv8)) {
     CpuFeatureScope scope(&assm, ARMv8);
 
     __ mov(ip, Operand(sp));
-    __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+    __ stm(db_w, sp, {r4, fp, lr});
 
     __ mov(r4, Operand(r0));
 
@@ -2971,17 +3117,17 @@ TEST(ARMv8_float32_vrintX) {
     __ vrintz(s5, s6);
     __ vstr(s5, r4, offsetof(T, zr));
 
-    __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+    __ ldm(ia_w, sp, {r4, fp, pc});
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
 
 #define CHECK_VRINT(input_val, ares, nres, mres, pres, zres) \
   t.input = input_val;                                       \
@@ -3007,11 +3153,11 @@ TEST(ARMv8_float32_vrintX) {
     float nan = std::numeric_limits<float>::quiet_NaN();
     t.input = nan;
     f.Call(&t, 0, 0, 0, 0);
-    CHECK_EQ(bit_cast<int32_t>(nan), bit_cast<int32_t>(t.ar));
-    CHECK_EQ(bit_cast<int32_t>(nan), bit_cast<int32_t>(t.nr));
-    CHECK_EQ(bit_cast<int32_t>(nan), bit_cast<int32_t>(t.mr));
-    CHECK_EQ(bit_cast<int32_t>(nan), bit_cast<int32_t>(t.pr));
-    CHECK_EQ(bit_cast<int32_t>(nan), bit_cast<int32_t>(t.zr));
+    CHECK_EQ(base::bit_cast<int32_t>(nan), base::bit_cast<int32_t>(t.ar));
+    CHECK_EQ(base::bit_cast<int32_t>(nan), base::bit_cast<int32_t>(t.nr));
+    CHECK_EQ(base::bit_cast<int32_t>(nan), base::bit_cast<int32_t>(t.mr));
+    CHECK_EQ(base::bit_cast<int32_t>(nan), base::bit_cast<int32_t>(t.pr));
+    CHECK_EQ(base::bit_cast<int32_t>(nan), base::bit_cast<int32_t>(t.zr));
 
 #undef CHECK_VRINT
   }
@@ -3024,27 +3170,26 @@ TEST(ARMv8_vrintX) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     double input;
     double ar;
     double nr;
     double mr;
     double pr;
     double zr;
-  } T;
+  };
   T t;
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles and floats.
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
-  Label L, C;
+  Assembler assm(AssemblerOptions{});
 
 
   if (CpuFeatures::IsSupported(ARMv8)) {
     CpuFeatureScope scope(&assm, ARMv8);
 
     __ mov(ip, Operand(sp));
-    __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
+    __ stm(db_w, sp, {r4, fp, lr});
 
     __ mov(r4, Operand(r0));
 
@@ -3073,17 +3218,17 @@ TEST(ARMv8_vrintX) {
     __ vrintz(d5, d6);
     __ vstr(d5, r4, offsetof(T, zr));
 
-    __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+    __ ldm(ia_w, sp, {r4, fp, pc});
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_piiii>::FromCode(*code);
+    auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
 
 #define CHECK_VRINT(input_val, ares, nres, mres, pres, zres) \
   t.input = input_val;                                       \
@@ -3109,11 +3254,11 @@ TEST(ARMv8_vrintX) {
     double nan = std::numeric_limits<double>::quiet_NaN();
     t.input = nan;
     f.Call(&t, 0, 0, 0, 0);
-    CHECK_EQ(bit_cast<int64_t>(nan), bit_cast<int64_t>(t.ar));
-    CHECK_EQ(bit_cast<int64_t>(nan), bit_cast<int64_t>(t.nr));
-    CHECK_EQ(bit_cast<int64_t>(nan), bit_cast<int64_t>(t.mr));
-    CHECK_EQ(bit_cast<int64_t>(nan), bit_cast<int64_t>(t.pr));
-    CHECK_EQ(bit_cast<int64_t>(nan), bit_cast<int64_t>(t.zr));
+    CHECK_EQ(base::bit_cast<int64_t>(nan), base::bit_cast<int64_t>(t.ar));
+    CHECK_EQ(base::bit_cast<int64_t>(nan), base::bit_cast<int64_t>(t.nr));
+    CHECK_EQ(base::bit_cast<int64_t>(nan), base::bit_cast<int64_t>(t.mr));
+    CHECK_EQ(base::bit_cast<int64_t>(nan), base::bit_cast<int64_t>(t.pr));
+    CHECK_EQ(base::bit_cast<int64_t>(nan), base::bit_cast<int64_t>(t.zr));
 
 #undef CHECK_VRINT
   }
@@ -3125,7 +3270,7 @@ TEST(ARMv8_vsel) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   // Used to indicate whether a condition passed or failed.
   static constexpr float kResultPass = 1.0f;
@@ -3189,8 +3334,8 @@ TEST(ARMv8_vsel) {
     __ vsel(vc, s0, s1, s2);
     __ vstr(s0, r1, offsetof(ResultsF32, vselvc_));
 
-    __ vmov(d1, Double(kResultPass));
-    __ vmov(d2, Double(kResultFail));
+    __ vmov(d1, base::Double(kResultPass));
+    __ vmov(d2, base::Double(kResultFail));
 
     __ vsel(eq, d0, d1, d2);
     __ vstr(d0, r2, offsetof(ResultsF64, vseleq_));
@@ -3215,14 +3360,14 @@ TEST(ARMv8_vsel) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_ippii>::FromCode(*code);
+    auto f = GeneratedCode<F_ippii>::FromCode(isolate, *code);
 
-    STATIC_ASSERT(kResultPass == -kResultFail);
+    static_assert(kResultPass == -kResultFail);
 #define CHECK_VSEL(n, z, c, v, vseleq, vselge, vselgt, vselvs)     \
   do {                                                             \
     ResultsF32 results_f32;                                        \
@@ -3275,7 +3420,7 @@ TEST(ARMv8_vminmax_f64) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   struct Inputs {
     double left_;
@@ -3306,25 +3451,27 @@ TEST(ARMv8_vminmax_f64) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_ppiii>::FromCode(*code);
+    auto f = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
 
-#define CHECK_VMINMAX(left, right, vminnm, vmaxnm)                             \
-  do {                                                                         \
-    Inputs inputs = {left, right};                                             \
-    Results results;                                                           \
-    f.Call(&inputs, &results, 0, 0, 0);                                        \
-    /* Use a bit_cast to correctly identify -0.0 and NaNs. */                  \
-    CHECK_EQ(bit_cast<uint64_t>(vminnm), bit_cast<uint64_t>(results.vminnm_)); \
-    CHECK_EQ(bit_cast<uint64_t>(vmaxnm), bit_cast<uint64_t>(results.vmaxnm_)); \
+#define CHECK_VMINMAX(left, right, vminnm, vmaxnm)                  \
+  do {                                                              \
+    Inputs inputs = {left, right};                                  \
+    Results results;                                                \
+    f.Call(&inputs, &results, 0, 0, 0);                             \
+    /* Use a base::bit_cast to correctly identify -0.0 and NaNs. */ \
+    CHECK_EQ(base::bit_cast<uint64_t>(vminnm),                      \
+             base::bit_cast<uint64_t>(results.vminnm_));            \
+    CHECK_EQ(base::bit_cast<uint64_t>(vmaxnm),                      \
+             base::bit_cast<uint64_t>(results.vmaxnm_));            \
   } while (0);
 
-    double nan_a = bit_cast<double>(UINT64_C(0x7FF8000000000001));
-    double nan_b = bit_cast<double>(UINT64_C(0x7FF8000000000002));
+    double nan_a = base::bit_cast<double>(UINT64_C(0x7FF8000000000001));
+    double nan_b = base::bit_cast<double>(UINT64_C(0x7FF8000000000002));
 
     CHECK_VMINMAX(1.0, -1.0, -1.0, 1.0);
     CHECK_VMINMAX(-1.0, 1.0, -1.0, 1.0);
@@ -3355,7 +3502,7 @@ TEST(ARMv8_vminmax_f32) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   struct Inputs {
     float left_;
@@ -3386,25 +3533,27 @@ TEST(ARMv8_vminmax_f32) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_ppiii>::FromCode(*code);
+    auto f = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
 
-#define CHECK_VMINMAX(left, right, vminnm, vmaxnm)                             \
-  do {                                                                         \
-    Inputs inputs = {left, right};                                             \
-    Results results;                                                           \
-    f.Call(&inputs, &results, 0, 0, 0);                                        \
-    /* Use a bit_cast to correctly identify -0.0 and NaNs. */                  \
-    CHECK_EQ(bit_cast<uint32_t>(vminnm), bit_cast<uint32_t>(results.vminnm_)); \
-    CHECK_EQ(bit_cast<uint32_t>(vmaxnm), bit_cast<uint32_t>(results.vmaxnm_)); \
+#define CHECK_VMINMAX(left, right, vminnm, vmaxnm)                  \
+  do {                                                              \
+    Inputs inputs = {left, right};                                  \
+    Results results;                                                \
+    f.Call(&inputs, &results, 0, 0, 0);                             \
+    /* Use a base::bit_cast to correctly identify -0.0 and NaNs. */ \
+    CHECK_EQ(base::bit_cast<uint32_t>(vminnm),                      \
+             base::bit_cast<uint32_t>(results.vminnm_));            \
+    CHECK_EQ(base::bit_cast<uint32_t>(vmaxnm),                      \
+             base::bit_cast<uint32_t>(results.vmaxnm_));            \
   } while (0);
 
-    float nan_a = bit_cast<float>(UINT32_C(0x7FC00001));
-    float nan_b = bit_cast<float>(UINT32_C(0x7FC00002));
+    float nan_a = base::bit_cast<float>(UINT32_C(0x7FC00001));
+    float nan_b = base::bit_cast<float>(UINT32_C(0x7FC00002));
 
     CHECK_VMINMAX(1.0f, -1.0f, -1.0f, 1.0f);
     CHECK_VMINMAX(-1.0f, 1.0f, -1.0f, 1.0f);
@@ -3430,7 +3579,10 @@ TEST(ARMv8_vminmax_f32) {
 }
 
 template <typename T, typename Inputs, typename Results>
-static GeneratedCode<F_ppiii> GenerateMacroFloatMinMax(MacroAssembler& assm) {
+static GeneratedCode<F_ppiii> GenerateMacroFloatMinMax(
+    MacroAssembler* assm_ptr) {
+  MacroAssembler& assm = *assm_ptr;
+
   T a = T::from_code(0);  // d0/s0
   T b = T::from_code(1);  // d1/s1
   T c = T::from_code(2);  // d2/s2
@@ -3516,12 +3668,12 @@ static GeneratedCode<F_ppiii> GenerateMacroFloatMinMax(MacroAssembler& assm) {
   CodeDesc desc;
   assm.GetCode(assm.isolate(), &desc);
   Handle<Code> code =
-      assm.isolate()->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(assm.isolate(), desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  return GeneratedCode<F_ppiii>::FromCode(*code);
+  return GeneratedCode<F_ppiii>::FromCode(assm.isolate(), *code);
 }
 
 TEST(macro_float_minmax_f64) {
@@ -3530,7 +3682,7 @@ TEST(macro_float_minmax_f64) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  MacroAssembler assm(isolate, nullptr, 0, CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, CodeObjectRequired::kYes);
 
   struct Inputs {
     double left_;
@@ -3548,24 +3700,30 @@ TEST(macro_float_minmax_f64) {
     double max_aba_;
   };
 
-  auto f = GenerateMacroFloatMinMax<DwVfpRegister, Inputs, Results>(assm);
+  auto f = GenerateMacroFloatMinMax<DwVfpRegister, Inputs, Results>(&assm);
 
-#define CHECK_MINMAX(left, right, min, max)                                  \
-  do {                                                                       \
-    Inputs inputs = {left, right};                                           \
-    Results results;                                                         \
-    f.Call(&inputs, &results, 0, 0, 0);                                      \
-    /* Use a bit_cast to correctly identify -0.0 and NaNs. */                \
-    CHECK_EQ(bit_cast<uint64_t>(min), bit_cast<uint64_t>(results.min_abc_)); \
-    CHECK_EQ(bit_cast<uint64_t>(min), bit_cast<uint64_t>(results.min_aab_)); \
-    CHECK_EQ(bit_cast<uint64_t>(min), bit_cast<uint64_t>(results.min_aba_)); \
-    CHECK_EQ(bit_cast<uint64_t>(max), bit_cast<uint64_t>(results.max_abc_)); \
-    CHECK_EQ(bit_cast<uint64_t>(max), bit_cast<uint64_t>(results.max_aab_)); \
-    CHECK_EQ(bit_cast<uint64_t>(max), bit_cast<uint64_t>(results.max_aba_)); \
+#define CHECK_MINMAX(left, right, min, max)                         \
+  do {                                                              \
+    Inputs inputs = {left, right};                                  \
+    Results results;                                                \
+    f.Call(&inputs, &results, 0, 0, 0);                             \
+    /* Use a base::bit_cast to correctly identify -0.0 and NaNs. */ \
+    CHECK_EQ(base::bit_cast<uint64_t>(min),                         \
+             base::bit_cast<uint64_t>(results.min_abc_));           \
+    CHECK_EQ(base::bit_cast<uint64_t>(min),                         \
+             base::bit_cast<uint64_t>(results.min_aab_));           \
+    CHECK_EQ(base::bit_cast<uint64_t>(min),                         \
+             base::bit_cast<uint64_t>(results.min_aba_));           \
+    CHECK_EQ(base::bit_cast<uint64_t>(max),                         \
+             base::bit_cast<uint64_t>(results.max_abc_));           \
+    CHECK_EQ(base::bit_cast<uint64_t>(max),                         \
+             base::bit_cast<uint64_t>(results.max_aab_));           \
+    CHECK_EQ(base::bit_cast<uint64_t>(max),                         \
+             base::bit_cast<uint64_t>(results.max_aba_));           \
   } while (0)
 
-  double nan_a = bit_cast<double>(UINT64_C(0x7FF8000000000001));
-  double nan_b = bit_cast<double>(UINT64_C(0x7FF8000000000002));
+  double nan_a = base::bit_cast<double>(UINT64_C(0x7FF8000000000001));
+  double nan_b = base::bit_cast<double>(UINT64_C(0x7FF8000000000002));
 
   CHECK_MINMAX(1.0, -1.0, -1.0, 1.0);
   CHECK_MINMAX(-1.0, 1.0, -1.0, 1.0);
@@ -3595,7 +3753,7 @@ TEST(macro_float_minmax_f32) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  MacroAssembler assm(isolate, nullptr, 0, CodeObjectRequired::kYes);
+  MacroAssembler assm(isolate, CodeObjectRequired::kYes);
 
   struct Inputs {
     float left_;
@@ -3613,24 +3771,30 @@ TEST(macro_float_minmax_f32) {
     float max_aba_;
   };
 
-  auto f = GenerateMacroFloatMinMax<SwVfpRegister, Inputs, Results>(assm);
+  auto f = GenerateMacroFloatMinMax<SwVfpRegister, Inputs, Results>(&assm);
 
-#define CHECK_MINMAX(left, right, min, max)                                  \
-  do {                                                                       \
-    Inputs inputs = {left, right};                                           \
-    Results results;                                                         \
-    f.Call(&inputs, &results, 0, 0, 0);                                      \
-    /* Use a bit_cast to correctly identify -0.0 and NaNs. */                \
-    CHECK_EQ(bit_cast<uint32_t>(min), bit_cast<uint32_t>(results.min_abc_)); \
-    CHECK_EQ(bit_cast<uint32_t>(min), bit_cast<uint32_t>(results.min_aab_)); \
-    CHECK_EQ(bit_cast<uint32_t>(min), bit_cast<uint32_t>(results.min_aba_)); \
-    CHECK_EQ(bit_cast<uint32_t>(max), bit_cast<uint32_t>(results.max_abc_)); \
-    CHECK_EQ(bit_cast<uint32_t>(max), bit_cast<uint32_t>(results.max_aab_)); \
-    CHECK_EQ(bit_cast<uint32_t>(max), bit_cast<uint32_t>(results.max_aba_)); \
+#define CHECK_MINMAX(left, right, min, max)                         \
+  do {                                                              \
+    Inputs inputs = {left, right};                                  \
+    Results results;                                                \
+    f.Call(&inputs, &results, 0, 0, 0);                             \
+    /* Use a base::bit_cast to correctly identify -0.0 and NaNs. */ \
+    CHECK_EQ(base::bit_cast<uint32_t>(min),                         \
+             base::bit_cast<uint32_t>(results.min_abc_));           \
+    CHECK_EQ(base::bit_cast<uint32_t>(min),                         \
+             base::bit_cast<uint32_t>(results.min_aab_));           \
+    CHECK_EQ(base::bit_cast<uint32_t>(min),                         \
+             base::bit_cast<uint32_t>(results.min_aba_));           \
+    CHECK_EQ(base::bit_cast<uint32_t>(max),                         \
+             base::bit_cast<uint32_t>(results.max_abc_));           \
+    CHECK_EQ(base::bit_cast<uint32_t>(max),                         \
+             base::bit_cast<uint32_t>(results.max_aab_));           \
+    CHECK_EQ(base::bit_cast<uint32_t>(max),                         \
+             base::bit_cast<uint32_t>(results.max_aba_));           \
   } while (0)
 
-  float nan_a = bit_cast<float>(UINT32_C(0x7FC00001));
-  float nan_b = bit_cast<float>(UINT32_C(0x7FC00002));
+  float nan_a = base::bit_cast<float>(UINT32_C(0x7FC00001));
+  float nan_b = base::bit_cast<float>(UINT32_C(0x7FC00002));
 
   CHECK_MINMAX(1.0f, -1.0f, -1.0f, 1.0f);
   CHECK_MINMAX(-1.0f, 1.0f, -1.0f, 1.0f);
@@ -3660,14 +3824,14 @@ TEST(unaligned_loads) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  typedef struct {
+  struct T {
     uint32_t ldrh;
     uint32_t ldrsh;
     uint32_t ldr;
-  } T;
+  };
   T t;
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ ldrh(ip, MemOperand(r1, r2));
   __ str(ip, MemOperand(r0, offsetof(T, ldrh)));
   __ ldrsh(ip, MemOperand(r1, r2));
@@ -3679,12 +3843,12 @@ TEST(unaligned_loads) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_ppiii>::FromCode(*code);
+  auto f = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
 
 #ifndef V8_TARGET_LITTLE_ENDIAN
 #error This test assumes a little-endian layout.
@@ -3714,7 +3878,7 @@ TEST(unaligned_stores) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ strh(r3, MemOperand(r0, r2));
   __ str(r3, MemOperand(r1, r2));
   __ bx(lr);
@@ -3722,12 +3886,12 @@ TEST(unaligned_stores) {
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_ppiii>::FromCode(*code);
+  auto f = GeneratedCode<F_ppiii>::FromCode(isolate, *code);
 
 #ifndef V8_TARGET_LITTLE_ENDIAN
 #error This test assumes a little-endian layout.
@@ -3768,24 +3932,24 @@ TEST(vswp) {
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
-  typedef struct {
+  struct T {
     uint64_t vswp_d0;
     uint64_t vswp_d1;
     uint64_t vswp_d30;
     uint64_t vswp_d31;
     uint32_t vswp_q4[4];
     uint32_t vswp_q5[4];
-  } T;
+  };
   T t;
 
-  __ stm(db_w, sp, r4.bit() | r5.bit() | r6.bit() | r7.bit() | lr.bit());
+  __ stm(db_w, sp, {r4, r5, r6, r7, lr});
 
-  uint64_t one = bit_cast<uint64_t>(1.0);
+  uint64_t one = base::bit_cast<uint64_t>(1.0);
   __ mov(r5, Operand(one >> 32));
   __ mov(r4, Operand(one & 0xFFFFFFFF));
-  uint64_t minus_one = bit_cast<uint64_t>(-1.0);
+  uint64_t minus_one = base::bit_cast<uint64_t>(-1.0);
   __ mov(r7, Operand(minus_one >> 32));
   __ mov(r6, Operand(minus_one & 0xFFFFFFFF));
 
@@ -3816,18 +3980,18 @@ TEST(vswp) {
   __ add(r6, r0, Operand(static_cast<int32_t>(offsetof(T, vswp_q5))));
   __ vst1(Neon8, NeonListOperand(q5), NeonMemOperand(r6));
 
-  __ ldm(ia_w, sp, r4.bit() | r5.bit() | r6.bit() | r7.bit() | pc.bit());
+  __ ldm(ia_w, sp, {r4, r5, r6, r7, pc});
   __ bx(lr);
 
   CodeDesc desc;
   assm.GetCode(isolate, &desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
-  auto f = GeneratedCode<F_piiii>::FromCode(*code);
+  auto f = GeneratedCode<F_piiii>::FromCode(isolate, *code);
   f.Call(&t, 0, 0, 0, 0);
   CHECK_EQ(minus_one, t.vswp_d0);
   CHECK_EQ(one, t.vswp_d1);
@@ -3850,7 +4014,7 @@ TEST(regress4292_b) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label end;
   __ mov(r0, Operand(isolate->factory()->infinity_value()));
   for (int i = 0; i < 1020; ++i) {
@@ -3865,7 +4029,7 @@ TEST(regress4292_bl) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label end;
   __ mov(r0, Operand(isolate->factory()->infinity_value()));
   for (int i = 0; i < 1020; ++i) {
@@ -3880,7 +4044,7 @@ TEST(regress4292_blx) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   Label end;
   __ mov(r0, Operand(isolate->factory()->infinity_value()));
   for (int i = 0; i < 1020; ++i) {
@@ -3895,7 +4059,7 @@ TEST(regress4292_CheckConstPool) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
   __ mov(r0, Operand(isolate->factory()->infinity_value()));
   __ BlockConstPoolFor(1019);
   for (int i = 0; i < 1019; ++i) __ nop();
@@ -3907,21 +4071,21 @@ TEST(use_scratch_register_scope) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   // The assembler should have ip as a scratch by default.
-  CHECK_EQ(*assm.GetScratchRegisterList(), ip.bit());
+  CHECK_EQ(*assm.GetScratchRegisterList(), RegList{ip});
 
   {
     UseScratchRegisterScope temps(&assm);
-    CHECK_EQ(*assm.GetScratchRegisterList(), ip.bit());
+    CHECK_EQ(*assm.GetScratchRegisterList(), RegList{ip});
 
     Register scratch = temps.Acquire();
     CHECK_EQ(scratch.code(), ip.code());
-    CHECK_EQ(*assm.GetScratchRegisterList(), 0);
+    CHECK_EQ(*assm.GetScratchRegisterList(), RegList{});
   }
 
-  CHECK_EQ(*assm.GetScratchRegisterList(), ip.bit());
+  CHECK_EQ(*assm.GetScratchRegisterList(), RegList{ip});
 }
 
 TEST(use_scratch_vfp_register_scope) {
@@ -3929,7 +4093,7 @@ TEST(use_scratch_vfp_register_scope) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  Assembler assm(AssemblerOptions{}, nullptr, 0);
+  Assembler assm(AssemblerOptions{});
 
   VfpRegList orig_scratches = *assm.GetScratchVfpRegisterList();
 
@@ -4025,28 +4189,28 @@ TEST(split_add_immediate) {
   HandleScope scope(isolate);
 
   {
-    Assembler assm(AssemblerOptions{}, nullptr, 0);
+    Assembler assm(AssemblerOptions{});
     __ mov(r1, r0);
-    // Re-use the destination as a scratch.
+    // Reuse the destination as a scratch.
     __ add(r0, r1, Operand(0x12345678));
     __ blx(lr);
 
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+    auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
     uint32_t res = reinterpret_cast<int>(f.Call(0, 0, 0, 0, 0));
     ::printf("f() = 0x%x\n", res);
     CHECK_EQ(0x12345678, res);
   }
 
   {
-    Assembler assm(AssemblerOptions{}, nullptr, 0);
+    Assembler assm(AssemblerOptions{});
     // Use ip as a scratch.
     __ add(r0, r0, Operand(0x12345678));
     __ blx(lr);
@@ -4054,19 +4218,19 @@ TEST(split_add_immediate) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+    auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
     uint32_t res = reinterpret_cast<int>(f.Call(0, 0, 0, 0, 0));
     ::printf("f() = 0x%x\n", res);
     CHECK_EQ(0x12345678, res);
   }
 
   {
-    Assembler assm(AssemblerOptions{}, nullptr, 0);
+    Assembler assm(AssemblerOptions{});
     UseScratchRegisterScope temps(&assm);
     Register reserved = temps.Acquire();
     USE(reserved);
@@ -4077,12 +4241,12 @@ TEST(split_add_immediate) {
     CodeDesc desc;
     assm.GetCode(isolate, &desc);
     Handle<Code> code =
-        isolate->factory()->NewCode(desc, Code::STUB, Handle<Code>());
+        Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef DEBUG
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
-    auto f = GeneratedCode<F_iiiii>::FromCode(*code);
+    auto f = GeneratedCode<F_iiiii>::FromCode(isolate, *code);
     uint32_t res = reinterpret_cast<int>(f.Call(0, 0, 0, 0, 0));
     ::printf("f() = 0x%x\n", res);
     CHECK_EQ(0x12345678, res);
@@ -4094,18 +4258,18 @@ namespace {
 std::vector<Float32> Float32Inputs() {
   std::vector<Float32> inputs;
   FOR_FLOAT32_INPUTS(f) {
-    inputs.push_back(Float32::FromBits(bit_cast<uint32_t>(*f)));
+    inputs.push_back(Float32::FromBits(base::bit_cast<uint32_t>(f)));
   }
-  FOR_UINT32_INPUTS(bits) { inputs.push_back(Float32::FromBits(*bits)); }
+  FOR_UINT32_INPUTS(bits) { inputs.push_back(Float32::FromBits(bits)); }
   return inputs;
 }
 
 std::vector<Float64> Float64Inputs() {
   std::vector<Float64> inputs;
   FOR_FLOAT64_INPUTS(f) {
-    inputs.push_back(Float64::FromBits(bit_cast<uint64_t>(*f)));
+    inputs.push_back(Float64::FromBits(base::bit_cast<uint64_t>(f)));
   }
-  FOR_UINT64_INPUTS(bits) { inputs.push_back(Float64::FromBits(*bits)); }
+  FOR_UINT64_INPUTS(bits) { inputs.push_back(Float64::FromBits(bits)); }
   return inputs;
 }
 
@@ -4115,7 +4279,7 @@ TEST(vabs_32) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  auto f = AssembleCode<F_iiiii>([](Assembler& assm) {
+  auto f = AssembleCode<F_iiiii>(isolate, [](Assembler& assm) {
     __ vmov(s0, r0);
     __ vabs(s0, s0);
     __ vmov(r0, s0);
@@ -4133,7 +4297,7 @@ TEST(vabs_64) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  auto f = AssembleCode<F_iiiii>([](Assembler& assm) {
+  auto f = AssembleCode<F_iiiii>(isolate, [](Assembler& assm) {
     __ vmov(d0, r0, r1);
     __ vabs(d0, d0);
     __ vmov(r1, r0, d0);
@@ -4153,7 +4317,7 @@ TEST(vneg_32) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  auto f = AssembleCode<F_iiiii>([](Assembler& assm) {
+  auto f = AssembleCode<F_iiiii>(isolate, [](Assembler& assm) {
     __ vmov(s0, r0);
     __ vneg(s0, s0);
     __ vmov(r0, s0);
@@ -4171,7 +4335,7 @@ TEST(vneg_64) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
-  auto f = AssembleCode<F_iiiii>([](Assembler& assm) {
+  auto f = AssembleCode<F_iiiii>(isolate, [](Assembler& assm) {
     __ vmov(d0, r0, r1);
     __ vneg(d0, d0);
     __ vmov(r1, r0, d0);
@@ -4186,6 +4350,80 @@ TEST(vneg_64) {
     CHECK_EQ(exp.get_bits() >> 32, res);
   }
 }
+
+TEST(move_pair) {
+  Isolate* isolate = CcTest::i_isolate();
+  HandleScope scope(isolate);
+
+  auto f = AssembleCode<F_piiii>(isolate, [](MacroAssembler& assm) {
+    RegList used_callee_saved = {r4, r5, r6, r7, r8};
+    __ stm(db_w, sp, used_callee_saved);
+
+    // Save output register bank pointer to r8.
+    __ mov(r8, r0);
+
+    __ mov(r0, Operand(0xabababab));
+    __ mov(r1, Operand(0xbabababa));
+    __ mov(r2, Operand(0x12341234));
+    __ mov(r3, Operand(0x43214321));
+
+    // No overlap:
+    //  r4 <- r0
+    //  r5 <- r1
+    __ MovePair(r4, r0, r5, r1);
+
+    // Overlap but we can swap moves:
+    //  r2 <- r0
+    //  r6 <- r2
+    __ MovePair(r2, r0, r6, r2);
+
+    // Overlap but can be done:
+    //  r7 <- r3
+    //  r3 <- r0
+    __ MovePair(r7, r3, r3, r0);
+
+    // Swap.
+    //  r0 <- r1
+    //  r1 <- r0
+    __ MovePair(r0, r1, r1, r0);
+
+    // Fill the fake register bank.
+    __ str(r0, MemOperand(r8, 0 * kPointerSize));
+    __ str(r1, MemOperand(r8, 1 * kPointerSize));
+    __ str(r2, MemOperand(r8, 2 * kPointerSize));
+    __ str(r3, MemOperand(r8, 3 * kPointerSize));
+    __ str(r4, MemOperand(r8, 4 * kPointerSize));
+    __ str(r5, MemOperand(r8, 5 * kPointerSize));
+    __ str(r6, MemOperand(r8, 6 * kPointerSize));
+    __ str(r7, MemOperand(r8, 7 * kPointerSize));
+
+    __ ldm(ia_w, sp, used_callee_saved);
+  });
+
+  // Create a fake register bank.
+  uint32_t r[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  f.Call(r, 0, 0, 0, 0);
+
+  //  r4 <- r0
+  //  r5 <- r1
+  CHECK_EQ(0xabababab, r[4]);
+  CHECK_EQ(0xbabababa, r[5]);
+
+  //  r2 <- r0
+  //  r6 <- r2
+  CHECK_EQ(0xabababab, r[2]);
+  CHECK_EQ(0x12341234, r[6]);
+
+  //  r7 <- r3
+  //  r3 <- r0
+  CHECK_EQ(0x43214321, r[7]);
+  CHECK_EQ(0xabababab, r[3]);
+
+  // r0 and r1 should be swapped.
+  CHECK_EQ(0xbabababa, r[0]);
+  CHECK_EQ(0xabababab, r[1]);
+}
+
 
 #undef __
 

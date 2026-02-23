@@ -2,15 +2,12 @@
 const common = require('../common');
 const assert = require('assert');
 const spawnSync = require('child_process').spawnSync;
-const signals = process.binding('constants').os.signals;
-const rootUser = common.isWindows ? false : process.getuid() === 0;
+const signals = require('os').constants.signals;
+const rootUser = common.isWindows ? false :
+  common.isIBMi ? true : process.getuid() === 0;
 
-const invalidArgTypeError = common.expectsError(
-  { code: 'ERR_INVALID_ARG_TYPE', type: TypeError },
-  common.isWindows || rootUser ? 42 : 62);
-
-const invalidRangeError =
-  common.expectsError({ code: 'ERR_OUT_OF_RANGE', type: RangeError }, 20);
+const invalidArgTypeError = { code: 'ERR_INVALID_ARG_TYPE', name: 'TypeError' };
+const invalidRangeError = { code: 'ERR_OUT_OF_RANGE', name: 'RangeError' };
 
 function pass(option, value) {
   // Run the command with the specified option. Since it's not a real command,
@@ -67,10 +64,10 @@ if (!common.isWindows) {
       fail('uid', [], invalidArgTypeError);
       fail('uid', {}, invalidArgTypeError);
       fail('uid', common.mustNotCall(), invalidArgTypeError);
-      fail('uid', NaN, invalidArgTypeError);
-      fail('uid', Infinity, invalidArgTypeError);
-      fail('uid', 3.1, invalidArgTypeError);
-      fail('uid', -3.1, invalidArgTypeError);
+      fail('uid', NaN, invalidRangeError);
+      fail('uid', Infinity, invalidRangeError);
+      fail('uid', 3.1, invalidRangeError);
+      fail('uid', -3.1, invalidRangeError);
     }
   }
 
@@ -86,10 +83,10 @@ if (!common.isWindows) {
       fail('gid', [], invalidArgTypeError);
       fail('gid', {}, invalidArgTypeError);
       fail('gid', common.mustNotCall(), invalidArgTypeError);
-      fail('gid', NaN, invalidArgTypeError);
-      fail('gid', Infinity, invalidArgTypeError);
-      fail('gid', 3.1, invalidArgTypeError);
-      fail('gid', -3.1, invalidArgTypeError);
+      fail('gid', NaN, invalidRangeError);
+      fail('gid', Infinity, invalidRangeError);
+      fail('gid', 3.1, invalidRangeError);
+      fail('gid', -3.1, invalidRangeError);
     }
   }
 }
@@ -155,12 +152,12 @@ if (!common.isWindows) {
   pass('timeout', 1);
   pass('timeout', 0);
   fail('timeout', -1, invalidRangeError);
-  fail('timeout', true, invalidRangeError);
-  fail('timeout', false, invalidRangeError);
-  fail('timeout', __dirname, invalidRangeError);
-  fail('timeout', [], invalidRangeError);
-  fail('timeout', {}, invalidRangeError);
-  fail('timeout', common.mustNotCall(), invalidRangeError);
+  fail('timeout', true, invalidArgTypeError);
+  fail('timeout', false, invalidArgTypeError);
+  fail('timeout', __dirname, invalidArgTypeError);
+  fail('timeout', [], invalidArgTypeError);
+  fail('timeout', {}, invalidArgTypeError);
+  fail('timeout', common.mustNotCall(), invalidArgTypeError);
   fail('timeout', NaN, invalidRangeError);
   fail('timeout', Infinity, invalidRangeError);
   fail('timeout', 3.1, invalidRangeError);
@@ -178,18 +175,17 @@ if (!common.isWindows) {
   fail('maxBuffer', -1, invalidRangeError);
   fail('maxBuffer', NaN, invalidRangeError);
   fail('maxBuffer', -Infinity, invalidRangeError);
-  fail('maxBuffer', true, invalidRangeError);
-  fail('maxBuffer', false, invalidRangeError);
-  fail('maxBuffer', __dirname, invalidRangeError);
-  fail('maxBuffer', [], invalidRangeError);
-  fail('maxBuffer', {}, invalidRangeError);
-  fail('maxBuffer', common.mustNotCall(), invalidRangeError);
+  fail('maxBuffer', true, invalidArgTypeError);
+  fail('maxBuffer', false, invalidArgTypeError);
+  fail('maxBuffer', __dirname, invalidArgTypeError);
+  fail('maxBuffer', [], invalidArgTypeError);
+  fail('maxBuffer', {}, invalidArgTypeError);
+  fail('maxBuffer', common.mustNotCall(), invalidArgTypeError);
 }
 
 {
   // Validate the killSignal option
-  const unknownSignalErr =
-    common.expectsError({ code: 'ERR_UNKNOWN_SIGNAL', type: TypeError }, 17);
+  const unknownSignalErr = { code: 'ERR_UNKNOWN_SIGNAL', name: 'TypeError' };
 
   pass('killSignal', undefined);
   pass('killSignal', null);

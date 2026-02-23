@@ -2,7 +2,7 @@
 
 const common = require('../common');
 const assert = require('assert');
-const _module = require('module'); // avoid collision with global.module
+const _module = require('module'); // Avoid collision with globalThis.module
 
 // Current directory gets highest priority for local modules
 function testFirstInPath(moduleName, isLocalModule) {
@@ -10,13 +10,12 @@ function testFirstInPath(moduleName, isLocalModule) {
     assert.strictEqual :
     assert.notStrictEqual;
 
-  const lookupResults = _module._resolveLookupPaths(moduleName);
+  let paths = _module._resolveLookupPaths(moduleName);
 
-  let paths = lookupResults[1];
   assertFunction(paths[0], '.');
 
-  paths = _module._resolveLookupPaths(moduleName, null, true);
-  assertFunction(paths && paths[0], '.');
+  paths = _module._resolveLookupPaths(moduleName, null);
+  assertFunction(paths?.[0], '.');
 }
 
 testFirstInPath('./lodash', true);

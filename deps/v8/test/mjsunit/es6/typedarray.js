@@ -46,11 +46,10 @@ function TestArrayBufferCreation() {
   assertThrows(function() { new ArrayBuffer(-10); }, RangeError);
   assertThrows(function() { new ArrayBuffer(-2.567); }, RangeError);
 
-/* TODO[dslomov]: Reenable the test
   assertThrows(function() {
-    var ab1 = new ArrayBuffer(0xFFFFFFFFFFFF)
+    let kArrayBufferByteLengthLimit = %ArrayBufferMaxByteLength() + 1;
+    var ab1 = new ArrayBuffer(kArrayBufferByteLengthLimit);
   }, RangeError);
-*/
 
   var ab = new ArrayBuffer();
   assertSame(0, ab.byteLength);
@@ -450,6 +449,12 @@ TestSubArray(Float32Array, 0.5);
 TestSubArray(Float64Array, 0.5);
 TestSubArray(Uint8ClampedArray, 0xFF);
 
+assertThrows(
+    () => { Int8Array.prototype.subarray.call("xyz", 0, 1); },
+    TypeError,
+    "Method %TypedArray%.prototype.subarray called on incompatible " +
+    "receiver xyz");
+
 function TestTypedArrayOutOfRange(constructor, value, result) {
   var a = new constructor(1);
   a[0] = value;
@@ -610,8 +615,10 @@ function TestTypedArraySet() {
   assertThrows(function() { a.set.call({}) }, TypeError);
   assertThrows(function() { a.set.call([]) }, TypeError);
 
-  assertThrows(function() { a.set(0); }, TypeError);
-  assertThrows(function() { a.set(0, 1); }, TypeError);
+  a.set(0);
+  assertArrayPrefix(expected, a);
+  a.set(0, 1);
+  assertArrayPrefix(expected, a);
 
   assertEquals(1, a.set.length);
 
@@ -636,19 +643,19 @@ function TestTypedArraySet() {
   var detached = false;
   evilarr[1] = {
     [Symbol.toPrimitive]() {
-      %ArrayBufferNeuter(a111.buffer);
+      %ArrayBufferDetach(a111.buffer);
       detached = true;
       return 1;
     }
   };
-  assertThrows(() => a111.set(evilarr), TypeError);
+  a111.set(evilarr);
   assertEquals(true, detached);
 
   // Check if the target is a typed array before converting offset to integer
   var tmp = {
     [Symbol.toPrimitive]() {
       assertUnreachable("Parameter should not be processed when " +
-                        "array.[[ViewedArrayBuffer]] is neutered.");
+                        "array.[[ViewedArrayBuffer]] is detached.");
       return 1;
     }
   };
@@ -662,7 +669,7 @@ function TestTypedArraySet() {
       let detached = false;
       const offset = {
         [Symbol.toPrimitive]() {
-          %ArrayBufferNeuter(xs.buffer);
+          %ArrayBufferDetach(xs.buffer);
           detached = true;
           return 0;
         }
@@ -677,7 +684,7 @@ function TestTypedArraySet() {
     for (const klass of typedArrayConstructors) {
       const a = new klass(2);
       for (let i = 0; i < a.length; i++) a[i] = i;
-      %ArrayBufferNeuter(a.buffer);
+      %ArrayBufferDetach(a.buffer);
 
       const b = new klass(2);
       assertThrows(() => b.set(a), TypeError);
@@ -815,10 +822,10 @@ function TestTypedArraysWithIllegalIndicesStrict() {
   assertEquals(255, a[s2]);
   assertEquals(0, a[-0]);
 
-  /* Chromium bug: 424619
-   * a[-Infinity] = 50;
-   * assertEquals(undefined, a[-Infinity]);
-   */
+
+  a[-Infinity] = 50;
+  assertEquals(undefined, a[-Infinity]);
+
   a[1.5] = 10;
   assertEquals(undefined, a[1.5]);
   var nan = Math.sqrt(-1);
@@ -975,7 +982,7 @@ assertThrows(function() { DataView(new ArrayBuffer()); }, TypeError);
 
 function TestNonConfigurableProperties(constructor) {
   var arr = new constructor([100])
-  assertFalse(Object.getOwnPropertyDescriptor(arr,"0").configurable)
+  assertTrue(Object.getOwnPropertyDescriptor(arr,"0").configurable)
   assertFalse(delete arr[0])
 }
 
@@ -993,16 +1000,17 @@ for(i = 0; i < typedArrayConstructors.length; i++) {
 })();
 
 (function TestBufferLengthTooLong() {
-  try {
-    var buf = new ArrayBuffer(2147483648);
-  } catch (e) {
-    // The ArrayBuffer allocation fails on 32-bit archs, so no need to try to
-    // construct the typed array.
-    return;
+  const kMaxByteLength = %ArrayBufferMaxByteLength();
+  assertThrows(
+      () => new ArrayBuffer(kMaxByteLength + 1), RangeError,
+      'Invalid array buffer length');
+  for (let constr
+           of [Int8Array, Int16Array, Int32Array, Float32Array, Float64Array,
+               BigInt64Array]) {
+    let max_len = Math.floor(kMaxByteLength / constr.BYTES_PER_ELEMENT);
+    let expected_error = `Invalid typed array length: ${max_len + 1}`;
+    assertThrows(() => new constr(max_len + 1), RangeError, expected_error);
   }
-  assertThrows(function() {
-    new Int8Array(buf);
-  }, RangeError);
 })();
 
 (function TestByteLengthErrorMessage() {
@@ -1022,3 +1030,29 @@ assertThrows(function LargeSourceArray() {
 
   a.set(v0);
 });
+
+function TestMapCustomSpeciesConstructor(constructor) {
+  const sample = new constructor([40, 42, 42]);
+  let result, ctorThis;
+
+  sample.constructor = {};
+  sample.constructor[Symbol.species] = function(count) {
+    result = arguments;
+    ctorThis = this;
+    return new constructor(count);
+  };
+
+  sample.map(function(v) { return v; });
+
+  assertSame(result.length, 1, "called with 1 argument");
+  assertSame(result[0], 3, "[0] is the new captured length");
+
+  assertTrue(
+    ctorThis instanceof sample.constructor[Symbol.species],
+    "`this` value in the @@species fn is an instance of the function itself"
+  );
+};
+
+for(i = 0; i < typedArrayConstructors.length; i++) {
+  TestPropertyTypeChecks(typedArrayConstructors[i]);
+}

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/init/v8.h"
 
 #include "src/interpreter/bytecode-node.h"
 #include "test/unittests/test-utils.h"
@@ -41,10 +41,10 @@ TEST_F(BytecodeNodeTest, Constructor3) {
 
 TEST_F(BytecodeNodeTest, Constructor4) {
   uint32_t operands[] = {0x11, 0x22, 0x33};
-  BytecodeNode node(Bytecode::kLdaNamedProperty, operands[0], operands[1],
+  BytecodeNode node(Bytecode::kGetNamedProperty, operands[0], operands[1],
                     operands[2]);
   CHECK_EQ(node.operand_count(), 3);
-  CHECK_EQ(node.bytecode(), Bytecode::kLdaNamedProperty);
+  CHECK_EQ(node.bytecode(), Bytecode::kGetNamedProperty);
   CHECK_EQ(node.operand(0), operands[0]);
   CHECK_EQ(node.operand(1), operands[1]);
   CHECK_EQ(node.operand(2), operands[2]);

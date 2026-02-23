@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load("test/mjsunit/wasm/wasm-constants.js");
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 const kTableSize = 3;
 
@@ -66,14 +63,14 @@ function caller_module() {
 
   builder.addFunction("call1", sig_i_i)
     .addBody([
-      kExprGetLocal, 0, // --
+      kExprLocalGet, 0, // --
       kExprCallIndirect, sig_i_v, kTableZero])  // --
     .exportAs("call1");
 
   builder.addFunction("call2", sig_i_i)
     .addBody([
       kExprI32Const, 11, // --
-      kExprGetLocal, 0,
+      kExprLocalGet, 0,
       kExprCallIndirect, sig_i_i, kTableZero])  // --
     .exportAs("call2");
 
@@ -81,7 +78,7 @@ function caller_module() {
     .addBody([
       kExprI32Const, 21,
       kExprI32Const, 22,
-      kExprGetLocal, 0,
+      kExprLocalGet, 0,
       kExprCallIndirect, sig_i_ii, kTableZero])  // --
     .exportAs("call3");
 

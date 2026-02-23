@@ -4,7 +4,7 @@ const common = require('../common');
 const assert = require('assert');
 
 const { internalBinding } = require('internal/test/binding');
-const StreamWrap = require('_stream_wrap');
+const StreamWrap = require('internal/js_stream_socket');
 const { Duplex } = require('stream');
 const { ShutdownWrap } = internalBinding('stream_wrap');
 
@@ -19,10 +19,10 @@ function testShutdown(callback) {
   const wrap = new StreamWrap(stream);
 
   const req = new ShutdownWrap();
-  req.oncomplete = function(code) {
+  req.oncomplete = common.mustCall(function(code) {
     assert(code < 0);
     callback();
-  };
+  });
   req.handle = wrap._handle;
 
   // Close the handle to simulate

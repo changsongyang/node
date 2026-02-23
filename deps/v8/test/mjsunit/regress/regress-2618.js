@@ -25,28 +25,36 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --use-osr --allow-natives-syntax --ignition-osr --opt
-// Flags: --no-always-opt
+// Flags: --use-osr --allow-natives-syntax --turbofan
+// Flags: --no-maglev-osr
 
-// Can't OSR with always-opt.
-assertFalse(isAlwaysOptimize());
+if (isNeverOptimizeLiteMode()) {
+  print("Warning: skipping test that requires optimization in Lite mode.");
+  quit(0);
+}
 
-function f() {
+function f(disable_asserts) {
   do {
     do {
-      for (var i = 0; i < 10; i++) %OptimizeOsr();
+      for (var i = 0; i < 10; i++) {
+        %OptimizeOsr();
+        %PrepareFunctionForOptimization(f);
+      }
       // Note: this check can't be wrapped in a function, because
       // calling that function causes a deopt from lack of call
       // feedback.
       var opt_status = %GetOptimizationStatus(f);
       assertTrue(
+        disable_asserts ||
         (opt_status & V8OptimizationStatus.kMaybeDeopted) !== 0 ||
         (opt_status & V8OptimizationStatus.kTopmostFrameIsTurboFanned) !== 0);
     } while (false);
   } while (false);
 }
 
-f();
+%PrepareFunctionForOptimization(f);
+f(true);  // Gather feedback first.
+f(false);
 
 function g() {
   for (var i = 0; i < 1; i++) { }
@@ -65,7 +73,10 @@ function g() {
             do {
               do {
                 do {
-                  for (var i = 0; i < 10; i++) %OptimizeOsr();
+                  for (var i = 0; i < 10; i++) {
+                    %OptimizeOsr();
+                    %PrepareFunctionForOptimization(g);
+                  }
                   var opt_status = %GetOptimizationStatus(g);
                   assertTrue(
                     (opt_status & V8OptimizationStatus.kMaybeDeopted) !== 0 ||
@@ -81,4 +92,5 @@ function g() {
   } while (false);
 }
 
+%PrepareFunctionForOptimization(g);
 g();

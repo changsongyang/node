@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm
-
-load('test/mjsunit/wasm/wasm-constants.js');
-load('test/mjsunit/wasm/wasm-module-builder.js');
+d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 let initialMemoryPages = 1;
 let maximumMemoryPages = 5;
@@ -24,14 +21,14 @@ function generateBuilder(add_memory, import_sig) {
   }
   if (add_memory) {
     // Add the memory if we expect a module builder with memory and load/store.
-    builder.addMemory(initialMemoryPages, maximumMemoryPages, true);
+    builder.addMemory(initialMemoryPages, maximumMemoryPages);
     builder.addFunction('load', kSig_i_i)
-        .addBody([kExprGetLocal, 0, kExprI32LoadMem, 0, 0])
+        .addBody([kExprLocalGet, 0, kExprI32LoadMem, 0, 0])
         .exportFunc();
     builder.addFunction('store', kSig_i_ii)
         .addBody([
-          kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem, 0, 0,
-          kExprGetLocal, 1
+          kExprLocalGet, 0, kExprLocalGet, 1, kExprI32StoreMem, 0, 0,
+          kExprLocalGet, 1
         ])
         .exportFunc();
   }
@@ -81,17 +78,17 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   let kPages = 1;
   let builder = new WasmModuleBuilder();
 
-  builder.addMemory(kPages, kPages, true);
+  builder.addMemory(kPages, kPages);
   builder.addFunction("store", kSig_v_ii)
     .addBody([
-      kExprGetLocal, 0,     // --
-      kExprGetLocal, 1,     // --
+      kExprLocalGet, 0,     // --
+      kExprLocalGet, 1,     // --
       kExprI32StoreMem, 0, 0, // --
     ])                      // --
     .exportFunc();
   builder.addFunction("load", kSig_i_i)
     .addBody([
-      kExprGetLocal, 0,     // --
+      kExprLocalGet, 0,     // --
       kExprI32LoadMem, 0, 0, // --
     ])                      // --
     .exportFunc();
@@ -101,17 +98,17 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   // The {b} instance forwards all {store} calls to the imported function.
   builder = new WasmModuleBuilder();
   builder.addImport("mod", "store", kSig_v_ii);
-  builder.addMemory(kPages, kPages, true);
+  builder.addMemory(kPages, kPages);
   builder.addFunction("store", kSig_v_ii)
     .addBody([
-      kExprGetLocal, 0,     // --
-      kExprGetLocal, 1,     // --
+      kExprLocalGet, 0,     // --
+      kExprLocalGet, 1,     // --
       kExprCallFunction, 0, // --
     ])                      // --
     .exportFunc();
   builder.addFunction("load", kSig_i_i)
     .addBody([
-      kExprGetLocal, 0,     // --
+      kExprLocalGet, 0,     // --
       kExprI32LoadMem, 0, 0, // --
     ])                      // --
     .exportFunc();
@@ -153,7 +150,7 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   // Function to invoke the imported function and add 1 to the result.
   first_module.addFunction('plus_one', kSig_i_i)
       .addBody([
-        kExprGetLocal, 0,                   // -
+        kExprLocalGet, 0,                   // -
         kExprCallFunction, other_fn_idx,    // call the imported function
         kExprI32Const, 1,                   // -
         kExprI32Add,                        // add 1 to the result
@@ -186,7 +183,7 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   // Function to invoke the imported function and add 1 to the result.
   first_module.addFunction('plus_one', kSig_i_i)
       .addBody([
-        kExprGetLocal, 0,                   // -
+        kExprLocalGet, 0,                   // -
         kExprCallFunction, other_fn_idx,    // call the imported function
         kExprI32Const, 1,                   // -
         kExprI32Add,                        // add 1 to the result
@@ -222,14 +219,14 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   // Function to invoke the imported function and add 1 to the result.
   first_module.addFunction('sandwich', kSig_i_iii)
       .addBody([
-        kExprGetLocal, 0,                   // param0 (index)
-        kExprGetLocal, 1,                   // param1 (first_value)
+        kExprLocalGet, 0,                   // param0 (index)
+        kExprLocalGet, 1,                   // param1 (first_value)
         kExprI32StoreMem, 0, 0,             // store value in first_instance
-        kExprGetLocal, 0,                   // param0 (index)
-        kExprGetLocal, 2,                   // param2 (second_value)
+        kExprLocalGet, 0,                   // param0 (index)
+        kExprLocalGet, 2,                   // param2 (second_value)
         kExprCallFunction, other_fn_idx,    // call the imported function
         kExprDrop,                          // drop the return value
-        kExprGetLocal, 0,                   // param0 (index)
+        kExprLocalGet, 0,                   // param0 (index)
         kExprI32LoadMem, 0, 0,              // load from first_instance
         kExprReturn                         // -
       ])
@@ -261,17 +258,17 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   let kPages = 1;
   let builder = new WasmModuleBuilder();
 
-  builder.addMemory(kPages, kPages, true);
+  builder.addMemory(kPages, kPages);
   builder.addFunction("store", kSig_v_ii)
     .addBody([
-      kExprGetLocal, 0,     // --
-      kExprGetLocal, 1,     // --
+      kExprLocalGet, 0,     // --
+      kExprLocalGet, 1,     // --
       kExprI32StoreMem, 0, 0, // --
     ])                      // --
     .exportFunc();
   builder.addFunction("load", kSig_i_i)
     .addBody([
-      kExprGetLocal, 0,     // --
+      kExprLocalGet, 0,     // --
       kExprI32LoadMem, 0, 0, // --
     ])                      // --
     .exportFunc();
@@ -303,15 +300,15 @@ function assertMemoryIndependence(load_a, store_a, load_b, store_b) {
   assertMemoryIndependence(a.exports.load, table.get(1),
                            b.exports.load, table.get(0));
 
-  // Check that calling (from WASM) through the table maintains independence.
+  // Check that calling (from Wasm) through the table maintains independence.
   builder = new WasmModuleBuilder();
   builder.addImportedTable("m", "table", kTableSize, kTableSize);
   var sig_index = builder.addType(kSig_v_ii);
   builder.addFunction("store", kSig_v_iii)
     .addBody([
-      kExprGetLocal, 1,
-      kExprGetLocal, 2,
-      kExprGetLocal, 0,
+      kExprLocalGet, 1,
+      kExprLocalGet, 2,
+      kExprLocalGet, 0,
       kExprCallIndirect, sig_index, kTableZero,
     ]).exportFunc();
 

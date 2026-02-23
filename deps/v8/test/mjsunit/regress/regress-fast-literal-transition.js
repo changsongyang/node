@@ -25,23 +25,25 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --always-opt --expose-gc
+// Flags: --allow-natives-syntax --jit-fuzzing --expose-gc
 
 // Test that the elements kind of the boilerplate object is sufficiently
 // checked in LFastLiteral, so that unoptimized code can transition the
-// boilerplate. The --always-opt flag makes sure that optimized code is
+// boilerplate. The --jit-fuzzing flag makes sure that optimized code is
 // not thrown away at deoptimization.
 
-// The switch statement in f() makes sure that f() is not inlined. If we
-// start inlining switch statements, we will still catch the bug on the
-// final --stress-opt run.
+// The switch statement in f() makes sure that f() is not inlined.
 
 function f(x) {
-  switch(x) {
-    case 1: return 1.4;
-    case 2: return 1.5;
-    case 3: return {};
-    default: gc();
+  switch (x) {
+    case 1:
+      return 1.4;
+    case 2:
+      return 1.5;
+    case 3:
+      return {};
+    default:
+      gc();
   }
 }
 
@@ -50,6 +52,8 @@ function g(x) {
 }
 
 // Step 1: Optimize g() to contain a PACKED_DOUBLE_ELEMENTS boilerplate.
+;
+%PrepareFunctionForOptimization(g);
 assertEquals([1.1, 1.2, 1.3, 1.4], g(1));
 assertEquals([1.1, 1.2, 1.3, 1.5], g(2));
 %OptimizeFunctionOnNextCall(g);

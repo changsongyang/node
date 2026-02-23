@@ -18,6 +18,7 @@ contextGroup.addScript(`
   function bar() {
     return 2;
   }
+  %PrepareFunctionForOptimization(foo);
   foo();
   foo();
   %OptimizeFunctionOnNextCall(foo);
@@ -25,7 +26,9 @@ contextGroup.addScript(`
   //# sourceURL=test.js
 `);
 
-(async function test(){
+session.setupScriptMap();
+
+InspectorTest.runAsyncTestSuite([async function test() {
   Protocol.Debugger.enable();
   Protocol.Debugger.setBlackboxPatterns({patterns: ['framework\.js']});
   Protocol.Runtime.evaluate({expression: `
@@ -34,5 +37,4 @@ contextGroup.addScript(`
   `});
   const {params:{callFrames}} = await Protocol.Debugger.oncePaused();
   session.logCallFrames(callFrames);
-  InspectorTest.completeTest();
-})();
+}]);

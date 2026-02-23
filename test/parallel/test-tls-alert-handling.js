@@ -1,12 +1,16 @@
 'use strict';
 const common = require('../common');
 
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
-if (!common.opensslCli)
-  common.skip('node compiled without OpenSSL CLI');
+const {
+  hasOpenSSL,
+  hasOpenSSL3,
+} = require('../common/crypto');
 
+const assert = require('assert');
 const net = require('net');
 const tls = require('tls');
 const fixtures = require('../common/fixtures');
@@ -29,7 +33,19 @@ const opts = {
 const max_iter = 20;
 let iter = 0;
 
-const errorHandler = common.mustCall(() => {
+const errorHandler = common.mustCall((err) => {
+  let expectedErrorCode = 'ERR_SSL_WRONG_VERSION_NUMBER';
+  let expectedErrorReason = /wrong[\s_]version[\s_]number/i;
+  if (hasOpenSSL(3, 2)) {
+    expectedErrorCode = 'ERR_SSL_PACKET_LENGTH_TOO_LONG';
+    expectedErrorReason = /packet[\s_]length[\s_]too[\s_]long/i;
+  };
+
+  assert.strictEqual(err.code, expectedErrorCode);
+  assert.strictEqual(err.library, 'SSL routines');
+  if (!hasOpenSSL3 && !process.features.openssl_is_boringssl)
+    assert.strictEqual(err.function, 'ssl3_get_record');
+  assert.match(err.reason, expectedErrorReason);
   errorReceived = true;
   if (canCloseServer())
     server.close();
@@ -43,6 +59,9 @@ server.listen(0, common.mustCall(function() {
   sendClient();
 }));
 
+server.on('tlsClientError', common.mustNotCall());
+
+server.on('error', common.mustNotCall());
 
 function sendClient() {
   const client = tls.connect(server.address().port, {
@@ -56,7 +75,7 @@ function sendClient() {
     }
     client.end();
   }, max_iter));
-  client.write('a');
+  client.write('a', common.mustCall());
   client.on('error', common.mustNotCall());
   client.on('close', common.mustCall(function() {
     clientClosed = true;
@@ -73,8 +92,22 @@ function sendBADTLSRecord() {
     socket: socket,
     rejectUnauthorized: false
   }, common.mustCall(function() {
-    socket.write(BAD_RECORD);
-    socket.end();
+    client.write('x');
+    client.on('data', (data) => {
+      socket.end(BAD_RECORD);
+    });
   }));
-  client.on('error', common.mustCall());
+  client.on('error', common.mustCall((err) => {
+    let expectedErrorCode = 'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION';
+    let expectedErrorReason = /tlsv1[\s_]alert[\s_]protocol[\s_]version/i;
+    if (hasOpenSSL(3, 2)) {
+      expectedErrorCode = 'ERR_SSL_TLSV1_ALERT_RECORD_OVERFLOW';
+      expectedErrorReason = /tlsv1[\s_]alert[\s_]record[\s_]overflow/i;
+    }
+    assert.strictEqual(err.code, expectedErrorCode);
+    assert.strictEqual(err.library, 'SSL routines');
+    if (!hasOpenSSL3 && !process.features.openssl_is_boringssl)
+      assert.strictEqual(err.function, 'ssl3_read_bytes');
+    assert.match(err.reason, expectedErrorReason);
+  }));
 }

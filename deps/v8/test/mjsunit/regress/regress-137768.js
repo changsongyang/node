@@ -34,7 +34,7 @@ function TestConstructor() {
   this[2] = 3;
 }
 
-function bad_func(o,a) {
+function bad_func(o, a) {
   var s = 0;
   for (var i = 0; i < 1; ++i) {
     o.newFileToChangeMap = undefined;
@@ -42,8 +42,8 @@ function bad_func(o,a) {
     s += x;
   }
   return s;
-}
-
+};
+%PrepareFunctionForOptimization(bad_func);
 o = new Object();
 a = new TestConstructor();
 bad_func(o, a);
@@ -62,7 +62,7 @@ a = new TestConstructor();
 %OptimizeFunctionOnNextCall(bad_func);
 bad_func(o, a);
 
-// Pass in a array of doubles. Before the fix, the optimized load and
+// Pass in an array of doubles. Before the fix, the optimized load and
 // tagged-to-i will treat part of a double value as a pointer and de-ref it
 // before the map check was executed that should have deopt.
 o = new Object();

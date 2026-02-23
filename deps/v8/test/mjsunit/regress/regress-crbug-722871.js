@@ -7,7 +7,7 @@ let workers = [];
 let runningWorkers = 0;
 
 function startWorker(script) {
-  let worker = new Worker(script);
+  let worker = new Worker(script, {type: 'string'});
   worker.done = false;
   worker.idx = workers.length;
   workers.push(worker);
@@ -42,7 +42,7 @@ let shared = `
   }
 
   function wake(memory, index) {
-    var result = Atomics.wake(memory, index, 1);
+    var result = Atomics.notify(memory, index, 1);
     if (result != 0 && result != 1) {
       postMessage('Error: bad result from wake: ' + result);
     }
@@ -50,7 +50,7 @@ let shared = `
 `;
 
 let worker1 = startWorker(shared + `
-  onmessage = function(msg) {
+  onmessage = function({data:msg}) {
     let memory = msg;
     const didStartIdx = 0;
     const shouldGoIdx = 1;
@@ -68,7 +68,7 @@ let worker1 = startWorker(shared + `
 `);
 
 let worker2 = startWorker(shared + `
-  onmessage = function(msg) {
+  onmessage = function({data:msg}) {
     let memory = msg;
     const didStartIdx = 0;
     const shouldGoIdx = 1;

@@ -25,7 +25,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc --opt --no-always-opt
+// Flags: --allow-natives-syntax --expose-gc --turbofan
+// Flags: --no-force-slow-path
 
 var elements_kind = {
   fast_smi_only            :  'fast smi only elements',
@@ -77,6 +78,7 @@ function create(a) {
 function runTest(test, kind, holey_predicate) {
 
   // Verify built-in implementation produces correct results.
+  %PrepareFunctionForOptimization(test);
   let a = test();
   assertKind(kind, a);
   holey_predicate(a);

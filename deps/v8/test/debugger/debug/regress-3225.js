@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --noalways-opt
 
 Debug = debug.Debug
 
@@ -32,6 +31,8 @@ Debug.setListener(listener);
 
 function* generator(a, b) {
   function set_a_to_5() { a = 5 }
+  // Make sure set_a_to_5 is 'used' so that it is visible to the debugger.
+  set_a_to_5;
   var b = 3;  // Shadows a parameter.
   debugger;
   yield a;

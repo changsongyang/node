@@ -23,15 +23,18 @@
 const common = require('../common');
 
 const assert = require('assert');
+const { isMainThread } = require('worker_threads');
 
-if (common.isWindows || !common.isMainThread) {
-  // uid/gid functions are POSIX only, setters are main-thread only.
-  if (common.isMainThread) {
-    assert.strictEqual(process.getuid, undefined);
-    assert.strictEqual(process.getgid, undefined);
-  }
+if (common.isWindows) {
+  // uid/gid functions are POSIX only.
+  assert.strictEqual(process.getuid, undefined);
+  assert.strictEqual(process.getgid, undefined);
   assert.strictEqual(process.setuid, undefined);
   assert.strictEqual(process.setgid, undefined);
+  return;
+}
+
+if (!isMainThread) {
   return;
 }
 
@@ -40,7 +43,7 @@ assert.throws(() => {
 }, {
   code: 'ERR_INVALID_ARG_TYPE',
   message: 'The "id" argument must be one of type ' +
-    'number or string. Received type object'
+    'number or string. Received an instance of Object'
 });
 
 assert.throws(() => {
@@ -49,6 +52,17 @@ assert.throws(() => {
   code: 'ERR_UNKNOWN_CREDENTIAL',
   message: 'User identifier does not exist: fhqwhgadshgnsdhjsdbkhsdabkfabkveyb'
 });
+
+// Passing -0 shouldn't crash the process
+// Refs: https://github.com/nodejs/node/issues/32750
+// And neither should values exceeding 2 ** 31 - 1.
+for (const id of [-0, 2 ** 31, 2 ** 32 - 1]) {
+  for (const fn of [process.setuid, process.setuid, process.setgid, process.setegid]) {
+    try { fn(id); } catch {
+      // Continue regardless of error.
+    }
+  }
+}
 
 // If we're not running as super user...
 if (process.getuid() !== 0) {
@@ -73,11 +87,12 @@ const oldgid = process.getgid();
 try {
   process.setgid('nobody');
 } catch (err) {
-  if (err.message !== 'setgid group id does not exist') {
+  if (err.code !== 'ERR_UNKNOWN_CREDENTIAL') {
     throw err;
   }
   process.setgid('nogroup');
 }
+
 const newgid = process.getgid();
 assert.notStrictEqual(newgid, oldgid);
 

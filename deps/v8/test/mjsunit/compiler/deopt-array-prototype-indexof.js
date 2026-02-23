@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 /* Test deopt behaviors when the prototype has elements */
 
@@ -16,6 +16,7 @@
     return arr.indexOf(val);
   }
 
+  %PrepareFunctionForOptimization(indexOf);
   assertEquals(0, indexOf(iarr, 0));
   assertEquals(0, indexOf(darr, 0));
   assertEquals(2, indexOf(iarr, 2));
@@ -36,6 +37,7 @@
     return arr.indexOf(val);
   }
 
+  %PrepareFunctionForOptimization(indexOf);
   assertEquals(0, indexOf(iarr, 0));
   assertEquals(2, indexOf(iarr, 2));
 
@@ -55,6 +57,7 @@
     return arr.indexOf(val);
   }
 
+  %PrepareFunctionForOptimization(indexOf);
   iarr.__proto__ = [2];
   assertEquals(-1, indexOf(iarr, 0));
   assertEquals(0, indexOf(iarr, 2));
@@ -73,6 +76,7 @@
     return arr.indexOf(val);
   }
 
+  %PrepareFunctionForOptimization(indexOf);
   assertEquals(-1, indexOf(iarr, 2));
   assertEquals(1, indexOf(iarr, 3));
 
@@ -93,6 +97,7 @@
     return array.indexOf(val);
   }
 
+  %PrepareFunctionForOptimization(indexOf);
   indexOf(6); indexOf(6);
 
   %OptimizeFunctionOnNextCall(indexOf);

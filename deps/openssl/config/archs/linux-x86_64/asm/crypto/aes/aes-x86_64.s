@@ -2,6 +2,7 @@
 .type	_x86_64_AES_encrypt,@function
 .align	16
 _x86_64_AES_encrypt:
+.cfi_startproc	
 	xorl	0(%r15),%eax
 	xorl	4(%r15),%ebx
 	xorl	8(%r15),%ecx
@@ -151,10 +152,12 @@ _x86_64_AES_encrypt:
 	xorl	%r12d,%ecx
 	xorl	%r8d,%edx
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_AES_encrypt,.-_x86_64_AES_encrypt
 .type	_x86_64_AES_encrypt_compact,@function
 .align	16
 _x86_64_AES_encrypt_compact:
+.cfi_startproc	
 	leaq	128(%r14),%r8
 	movl	0-128(%r8),%edi
 	movl	32-128(%r8),%ebp
@@ -324,6 +327,7 @@ _x86_64_AES_encrypt_compact:
 	xorl	8(%r15),%ecx
 	xorl	12(%r15),%edx
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_AES_encrypt_compact,.-_x86_64_AES_encrypt_compact
 .globl	AES_encrypt
 .type	AES_encrypt,@function
@@ -332,15 +336,24 @@ _x86_64_AES_encrypt_compact:
 .hidden	asm_AES_encrypt
 asm_AES_encrypt:
 AES_encrypt:
+.cfi_startproc	
+.byte	243,15,30,250
+	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
-	movq	%rsp,%r10
 	leaq	-63(%rdx),%rcx
 	andq	$-64,%rsp
 	subq	%rsp,%rcx
@@ -350,7 +363,8 @@ AES_encrypt:
 	subq	$32,%rsp
 
 	movq	%rsi,16(%rsp)
-	movq	%r10,24(%rsp)
+	movq	%rax,24(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x18,0x06,0x23,0x08
 .Lenc_prologue:
 
 	movq	%rdx,%r15
@@ -377,24 +391,34 @@ AES_encrypt:
 
 	movq	16(%rsp),%r9
 	movq	24(%rsp),%rsi
+.cfi_def_cfa	%rsi,8
 	movl	%eax,0(%r9)
 	movl	%ebx,4(%r9)
 	movl	%ecx,8(%r9)
 	movl	%edx,12(%r9)
 
-	movq	(%rsi),%r15
-	movq	8(%rsi),%r14
-	movq	16(%rsi),%r13
-	movq	24(%rsi),%r12
-	movq	32(%rsi),%rbp
-	movq	40(%rsi),%rbx
-	leaq	48(%rsi),%rsp
+	movq	-48(%rsi),%r15
+.cfi_restore	%r15
+	movq	-40(%rsi),%r14
+.cfi_restore	%r14
+	movq	-32(%rsi),%r13
+.cfi_restore	%r13
+	movq	-24(%rsi),%r12
+.cfi_restore	%r12
+	movq	-16(%rsi),%rbp
+.cfi_restore	%rbp
+	movq	-8(%rsi),%rbx
+.cfi_restore	%rbx
+	leaq	(%rsi),%rsp
+.cfi_def_cfa_register	%rsp
 .Lenc_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	AES_encrypt,.-AES_encrypt
 .type	_x86_64_AES_decrypt,@function
 .align	16
 _x86_64_AES_decrypt:
+.cfi_startproc	
 	xorl	0(%r15),%eax
 	xorl	4(%r15),%ebx
 	xorl	8(%r15),%ecx
@@ -546,10 +570,12 @@ _x86_64_AES_decrypt:
 	xorl	%r12d,%ecx
 	xorl	%r8d,%edx
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_AES_decrypt,.-_x86_64_AES_decrypt
 .type	_x86_64_AES_decrypt_compact,@function
 .align	16
 _x86_64_AES_decrypt_compact:
+.cfi_startproc	
 	leaq	128(%r14),%r8
 	movl	0-128(%r8),%edi
 	movl	32-128(%r8),%ebp
@@ -771,6 +797,7 @@ _x86_64_AES_decrypt_compact:
 	xorl	8(%r15),%ecx
 	xorl	12(%r15),%edx
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_AES_decrypt_compact,.-_x86_64_AES_decrypt_compact
 .globl	AES_decrypt
 .type	AES_decrypt,@function
@@ -779,15 +806,24 @@ _x86_64_AES_decrypt_compact:
 .hidden	asm_AES_decrypt
 asm_AES_decrypt:
 AES_decrypt:
+.cfi_startproc	
+.byte	243,15,30,250
+	movq	%rsp,%rax
+.cfi_def_cfa_register	%rax
 	pushq	%rbx
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_offset	%r15,-56
 
 
-	movq	%rsp,%r10
 	leaq	-63(%rdx),%rcx
 	andq	$-64,%rsp
 	subq	%rsp,%rcx
@@ -797,7 +833,8 @@ AES_decrypt:
 	subq	$32,%rsp
 
 	movq	%rsi,16(%rsp)
-	movq	%r10,24(%rsp)
+	movq	%rax,24(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x18,0x06,0x23,0x08
 .Ldec_prologue:
 
 	movq	%rdx,%r15
@@ -826,46 +863,75 @@ AES_decrypt:
 
 	movq	16(%rsp),%r9
 	movq	24(%rsp),%rsi
+.cfi_def_cfa	%rsi,8
 	movl	%eax,0(%r9)
 	movl	%ebx,4(%r9)
 	movl	%ecx,8(%r9)
 	movl	%edx,12(%r9)
 
-	movq	(%rsi),%r15
-	movq	8(%rsi),%r14
-	movq	16(%rsi),%r13
-	movq	24(%rsi),%r12
-	movq	32(%rsi),%rbp
-	movq	40(%rsi),%rbx
-	leaq	48(%rsi),%rsp
+	movq	-48(%rsi),%r15
+.cfi_restore	%r15
+	movq	-40(%rsi),%r14
+.cfi_restore	%r14
+	movq	-32(%rsi),%r13
+.cfi_restore	%r13
+	movq	-24(%rsi),%r12
+.cfi_restore	%r12
+	movq	-16(%rsi),%rbp
+.cfi_restore	%rbp
+	movq	-8(%rsi),%rbx
+.cfi_restore	%rbx
+	leaq	(%rsi),%rsp
+.cfi_def_cfa_register	%rsp
 .Ldec_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	AES_decrypt,.-AES_decrypt
 .globl	AES_set_encrypt_key
 .type	AES_set_encrypt_key,@function
 .align	16
 AES_set_encrypt_key:
+.cfi_startproc	
+.byte	243,15,30,250
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 	subq	$8,%rsp
+.cfi_adjust_cfa_offset	8
 .Lenc_key_prologue:
 
 	call	_x86_64_AES_set_encrypt_key
 
 	movq	40(%rsp),%rbp
+.cfi_restore	%rbp
 	movq	48(%rsp),%rbx
+.cfi_restore	%rbx
 	addq	$56,%rsp
+.cfi_adjust_cfa_offset	-56
 .Lenc_key_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	AES_set_encrypt_key,.-AES_set_encrypt_key
 
 .type	_x86_64_AES_set_encrypt_key,@function
 .align	16
 _x86_64_AES_set_encrypt_key:
+.cfi_startproc	
 	movl	%esi,%ecx
 	movq	%rdi,%rsi
 	movq	%rdx,%rdi
@@ -1101,18 +1167,34 @@ _x86_64_AES_set_encrypt_key:
 	movq	$-1,%rax
 .Lexit:
 .byte	0xf3,0xc3
+.cfi_endproc	
 .size	_x86_64_AES_set_encrypt_key,.-_x86_64_AES_set_encrypt_key
 .globl	AES_set_decrypt_key
 .type	AES_set_decrypt_key,@function
 .align	16
 AES_set_decrypt_key:
+.cfi_startproc	
+.byte	243,15,30,250
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-16
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-24
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-32
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-40
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-48
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-56
 	pushq	%rdx
+.cfi_adjust_cfa_offset	8
 .Ldec_key_prologue:
 
 	call	_x86_64_AES_set_encrypt_key
@@ -1280,14 +1362,22 @@ AES_set_decrypt_key:
 	xorq	%rax,%rax
 .Labort:
 	movq	8(%rsp),%r15
+.cfi_restore	%r15
 	movq	16(%rsp),%r14
+.cfi_restore	%r14
 	movq	24(%rsp),%r13
+.cfi_restore	%r13
 	movq	32(%rsp),%r12
+.cfi_restore	%r12
 	movq	40(%rsp),%rbp
+.cfi_restore	%rbp
 	movq	48(%rsp),%rbx
+.cfi_restore	%rbx
 	addq	$56,%rsp
+.cfi_adjust_cfa_offset	-56
 .Ldec_key_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	AES_set_decrypt_key,.-AES_set_decrypt_key
 .globl	AES_cbc_encrypt
 .type	AES_cbc_encrypt,@function
@@ -1297,26 +1387,43 @@ AES_set_decrypt_key:
 .hidden	asm_AES_cbc_encrypt
 asm_AES_cbc_encrypt:
 AES_cbc_encrypt:
+.cfi_startproc	
+.byte	243,15,30,250
 	cmpq	$0,%rdx
 	je	.Lcbc_epilogue
 	pushfq
+
+
+.cfi_adjust_cfa_offset	8
 	pushq	%rbx
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbx,-24
 	pushq	%rbp
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%rbp,-32
 	pushq	%r12
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r12,-40
 	pushq	%r13
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r13,-48
 	pushq	%r14
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r14,-56
 	pushq	%r15
+.cfi_adjust_cfa_offset	8
+.cfi_offset	%r15,-64
 .Lcbc_prologue:
 
 	cld
 	movl	%r9d,%r9d
 
 	leaq	.LAES_Te(%rip),%r14
+	leaq	.LAES_Td(%rip),%r10
 	cmpq	$0,%r9
-	jne	.Lcbc_picked_te
-	leaq	.LAES_Td(%rip),%r14
-.Lcbc_picked_te:
+	cmoveq	%r10,%r14
 
+.cfi_remember_state	
 	movl	OPENSSL_ia32cap_P(%rip),%r10d
 	cmpq	$512,%rdx
 	jb	.Lcbc_slow_prologue
@@ -1351,8 +1458,10 @@ AES_cbc_encrypt:
 .Lcbc_te_ok:
 
 	xchgq	%rsp,%r15
+.cfi_def_cfa_register	%r15
 
 	movq	%r15,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x40
 .Lcbc_fast_body:
 	movq	%rdi,24(%rsp)
 	movq	%rsi,32(%rsp)
@@ -1550,6 +1659,7 @@ AES_cbc_encrypt:
 
 .align	16
 .Lcbc_slow_prologue:
+.cfi_restore_state	
 
 	leaq	-88(%rsp),%rbp
 	andq	$-64,%rbp
@@ -1561,8 +1671,10 @@ AES_cbc_encrypt:
 	subq	%r10,%rbp
 
 	xchgq	%rsp,%rbp
+.cfi_def_cfa_register	%rbp
 
 	movq	%rbp,16(%rsp)
+.cfi_escape	0x0f,0x05,0x77,0x10,0x06,0x23,0x40
 .Lcbc_slow_body:
 
 
@@ -1734,18 +1846,31 @@ AES_cbc_encrypt:
 .align	16
 .Lcbc_exit:
 	movq	16(%rsp),%rsi
+.cfi_def_cfa	%rsi,64
 	movq	(%rsi),%r15
+.cfi_restore	%r15
 	movq	8(%rsi),%r14
+.cfi_restore	%r14
 	movq	16(%rsi),%r13
+.cfi_restore	%r13
 	movq	24(%rsi),%r12
+.cfi_restore	%r12
 	movq	32(%rsi),%rbp
+.cfi_restore	%rbp
 	movq	40(%rsi),%rbx
+.cfi_restore	%rbx
 	leaq	48(%rsi),%rsp
+.cfi_def_cfa	%rsp,16
 .Lcbc_popfq:
 	popfq
+
+
+.cfi_adjust_cfa_offset	-8
 .Lcbc_epilogue:
 	.byte	0xf3,0xc3
+.cfi_endproc	
 .size	AES_cbc_encrypt,.-AES_cbc_encrypt
+.section	.rodata
 .align	64
 .LAES_Te:
 .long	0xa56363c6,0xa56363c6
@@ -2532,3 +2657,25 @@ AES_cbc_encrypt:
 .long	0x1b1b1b1b, 0x1b1b1b1b, 0, 0
 .byte	65,69,83,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	64
+.previous	
+	.section ".note.gnu.property", "a"
+	.p2align 3
+	.long 1f - 0f
+	.long 4f - 1f
+	.long 5
+0:
+	# "GNU" encoded with .byte, since .asciz isn't supported
+	# on Solaris.
+	.byte 0x47
+	.byte 0x4e
+	.byte 0x55
+	.byte 0
+1:
+	.p2align 3
+	.long 0xc0000002
+	.long 3f - 2f
+2:
+	.long 3
+3:
+	.p2align 3
+4:

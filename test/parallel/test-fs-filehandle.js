@@ -8,29 +8,24 @@ const { internalBinding } = require('internal/test/binding');
 const fs = internalBinding('fs');
 const { stringToFlags } = require('internal/fs/utils');
 
-// Verifies that the FileHandle object is garbage collected and that a
-// warning is emitted if it is not closed.
+const filepath = path.toNamespacedPath(__filename);
 
-let fdnum;
+// Verifies that the FileHandle object is garbage collected and that an
+// error is thrown if it is not closed.
+process.on('uncaughtException', common.mustCall((err) => {
+  assert.strictEqual(err.code, 'ERR_INVALID_STATE');
+  assert.match(err.message, /^A FileHandle object was closed during/);
+  assert.match(err.message, new RegExp(RegExp.escape(filepath)));
+}));
+
+
 {
   const ctx = {};
-  fdnum = fs.openFileHandle(path.toNamespacedPath(__filename),
-                            stringToFlags('r'), 0o666, undefined, ctx).fd;
+  fs.openFileHandle(filepath,
+                    stringToFlags('r'), 0o666, undefined, ctx);
   assert.strictEqual(ctx.errno, undefined);
 }
 
-common.expectWarning({
-  'internal/test/binding': [
-    'These APIs are exposed only for testing ' +
-    'and are not tracked by any versioning system or deprecation process.',
-    common.noWarnCode
-  ],
-  'Warning': [
-    `Closing file descriptor ${fdnum} on garbage collection`,
-    common.noWarnCode
-  ]
-});
-
-gc();  // eslint-disable-line no-undef
+globalThis.gc();
 
 setTimeout(() => {}, 10);

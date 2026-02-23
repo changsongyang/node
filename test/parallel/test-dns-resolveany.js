@@ -11,7 +11,7 @@ const answers = [
   { type: 'AAAA', address: '::42', ttl: 123 },
   { type: 'MX', priority: 42, exchange: 'foobar.com', ttl: 124 },
   { type: 'NS', value: 'foobar.org', ttl: 457 },
-  { type: 'TXT', entries: [ 'v=spf1 ~all', 'xyz' ] },
+  { type: 'TXT', entries: [ 'v=spf1 ~all xyz\0foo' ] },
   { type: 'PTR', value: 'baz.org', ttl: 987 },
   {
     type: 'SOA',
@@ -22,6 +22,11 @@ const answers = [
     retry: 900,
     expire: 1800,
     minttl: 60
+  },
+  {
+    type: 'CAA',
+    critical: 128,
+    issue: 'platynum.ch'
   },
 ];
 
@@ -45,16 +50,20 @@ server.bind(0, common.mustCall(async () => {
 
   validateResults(await dnsPromises.resolveAny('example.org'));
 
-  dns.resolveAny('example.org', common.mustCall((err, res) => {
-    assert.ifError(err);
+  dns.resolveAny('example.org', common.mustSucceed((res) => {
     validateResults(res);
     server.close();
   }));
 }));
 
 function validateResults(res) {
-  // Compare copies with ttl removed, c-ares fiddles with that value.
-  assert.deepStrictEqual(
-    res.map((r) => Object.assign({}, r, { ttl: null })),
-    answers.map((r) => Object.assign({}, r, { ttl: null })));
+  // TTL values are only provided for A and AAAA entries.
+  assert.deepStrictEqual(res.map(maybeRedactTTL), answers.map(maybeRedactTTL));
+}
+
+function maybeRedactTTL(r) {
+  const ret = { ...r };
+  if (!['A', 'AAAA'].includes(r.type))
+    delete ret.ttl;
+  return ret;
 }

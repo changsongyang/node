@@ -20,41 +20,41 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-// Testing mutual send of handles: from master to worker, and from worker to
-// master.
+// Testing mutual send of handles: from primary to worker, and from worker to
+// primary.
 
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const cluster = require('cluster');
 const net = require('net');
 
-if (cluster.isMaster) {
+if (cluster.isPrimary) {
   const worker = cluster.fork();
-  worker.on('exit', function(code, signal) {
+  worker.on('exit', common.mustCall((code, signal) => {
     assert.strictEqual(code, 0, `Worker exited with an error code: ${code}`);
     assert(!signal, `Worker exited by a signal: ${signal}`);
     server.close();
-  });
+  }));
 
-  const server = net.createServer(function(socket) {
+  const server = net.createServer((socket) => {
     worker.send('handle', socket);
   });
 
-  server.listen(0, function() {
+  server.listen(0, () => {
     worker.send({ message: 'listen', port: server.address().port });
   });
 } else {
-  process.on('message', function(msg, handle) {
-    if (msg.message && msg.message === 'listen') {
+  process.on('message', common.mustCallAtLeast((msg, handle) => {
+    if (msg.message === 'listen') {
       assert(msg.port);
       const client1 = net.connect({
         host: 'localhost',
         port: msg.port
-      }, function() {
+      }, () => {
         const client2 = net.connect({
           host: 'localhost',
           port: msg.port
-        }, function() {
+        }, () => {
           client1.on('close', onclose);
           client2.on('close', onclose);
           client1.end();
@@ -62,12 +62,12 @@ if (cluster.isMaster) {
         });
       });
       let waiting = 2;
-      function onclose() {
+      const onclose = () => {
         if (--waiting === 0)
           cluster.worker.disconnect();
-      }
+      };
     } else {
       process.send('reply', handle);
     }
-  });
+  }));
 }

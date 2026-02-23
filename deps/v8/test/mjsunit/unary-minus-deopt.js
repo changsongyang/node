@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --opt --no-always-opt
+// Flags: --allow-natives-syntax --turbofan
 
 // This is a boiled-down example happening in the Epic Citadel demo:
 // After deopting, the multiplication for unary minus stayed in Smi
@@ -37,6 +37,7 @@ function unaryMinusTest(x) {
   return (g & -g) - 1 | 0;
 }
 
+%PrepareFunctionForOptimization(unaryMinusTest);
 unaryMinusTest(3);
 unaryMinusTest(3);
 %OptimizeFunctionOnNextCall(unaryMinusTest);
@@ -45,8 +46,10 @@ assertOptimized(unaryMinusTest);
 
 // Deopt on kMinInt
 unaryMinusTest(31);
-// The following is normally true, but not with --stress-opt. :-/
+// TODO(v8:13245): Investigate why this assertion fails and what intended
+// behavior is.
 // assertUnoptimized(unaryMinusTest);
+%PrepareFunctionForOptimization(unaryMinusTest);
 
 // We should have learned something from the deopt.
 unaryMinusTest(31);

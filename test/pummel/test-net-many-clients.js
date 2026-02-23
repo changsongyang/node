@@ -26,8 +26,8 @@ const net = require('net');
 
 // settings
 const bytes = 1024 * 40;
-const concurrency = 100;
-const connections_per_client = 5;
+const concurrency = 50;
+const connections_per_client = 3;
 
 // measured
 let total_connections = 0;
@@ -35,15 +35,14 @@ let total_connections = 0;
 const body = 'C'.repeat(bytes);
 
 const server = net.createServer(function(c) {
-  console.log('connected');
   total_connections++;
-  console.log('#');
+  console.log('connected', total_connections);
   c.write(body);
   c.end();
 });
 
-function runClient(callback) {
-  const client = net.createConnection(common.PORT);
+function runClient(port, callback) {
+  const client = net.createConnection(port);
 
   client.connections = 0;
 
@@ -63,13 +62,7 @@ function runClient(callback) {
     client.end();
   });
 
-  client.on('error', function(e) {
-    console.log('\n\nERROOOOOr');
-    throw e;
-  });
-
-  client.on('close', function(had_error) {
-    console.log('.');
+  client.on('close', common.mustCall(function(had_error) {
     assert.strictEqual(had_error, false);
     assert.strictEqual(client.recved.length, bytes);
 
@@ -79,17 +72,17 @@ function runClient(callback) {
     assert.ok(!client.fd);
 
     if (this.connections < connections_per_client) {
-      this.connect(common.PORT);
+      this.connect(port);
     } else {
       callback();
     }
-  });
+  }, connections_per_client));
 }
 
-server.listen(common.PORT, function() {
+server.listen(0, function() {
   let finished_clients = 0;
   for (let i = 0; i < concurrency; i++) {
-    runClient(function() {
+    runClient(server.address().port, function() {
       if (++finished_clients === concurrency) server.close();
     });
   }

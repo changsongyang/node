@@ -27,18 +27,17 @@ static int uv__dlerror(uv_lib_t* lib, const char* filename, DWORD errorno);
 
 int uv_dlopen(const char* filename, uv_lib_t* lib) {
   WCHAR filename_w[32768];
+  ssize_t r;
 
   lib->handle = NULL;
   lib->errmsg = NULL;
 
-  if (!MultiByteToWideChar(CP_UTF8,
-                           0,
-                           filename,
-                           -1,
-                           filename_w,
-                           ARRAY_SIZE(filename_w))) {
-    return uv__dlerror(lib, filename, GetLastError());
-  }
+  r = uv_wtf8_length_as_utf16(filename);
+  if (r < 0)
+    return uv__dlerror(lib, filename, ERROR_NO_UNICODE_TRANSLATION);
+  if ((size_t) r > ARRAY_SIZE(filename_w))
+    return uv__dlerror(lib, filename, ERROR_INSUFFICIENT_BUFFER);
+  uv_wtf8_to_utf16(filename, filename_w, r);
 
   lib->handle = LoadLibraryExW(filename_w, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
   if (lib->handle == NULL) {
@@ -64,7 +63,8 @@ void uv_dlclose(uv_lib_t* lib) {
 
 
 int uv_dlsym(uv_lib_t* lib, const char* name, void** ptr) {
-  *ptr = (void*) GetProcAddress(lib->handle, name);
+  /* Cast though integer to suppress pedantic warning about forbidden cast. */
+  *ptr = (void*)(uintptr_t) GetProcAddress(lib->handle, name);
   return uv__dlerror(lib, "", *ptr ? 0 : GetLastError());
 }
 
@@ -75,8 +75,9 @@ const char* uv_dlerror(const uv_lib_t* lib) {
 
 
 static void uv__format_fallback_error(uv_lib_t* lib, int errorno){
-  DWORD_PTR args[1] = { (DWORD_PTR) errorno };
-  LPSTR fallback_error = "error: %1!d!";
+  static const CHAR fallback_error[] = "error: %1!d!";
+  DWORD_PTR args[1];
+  args[0] = (DWORD_PTR) errorno;
 
   FormatMessageA(FORMAT_MESSAGE_FROM_STRING |
                  FORMAT_MESSAGE_ARGUMENT_ARRAY |
